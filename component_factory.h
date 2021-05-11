@@ -26,7 +26,7 @@ namespace RaccoonEcs
 		template<typename ComponentType, std::size_t PageSize = std::max(static_cast<std::size_t>(1), static_cast<std::size_t>(4096u / sizeof(ComponentType)))>
 		void registerComponent(size_t preallocatedPagesCount = 0)
 		{
-			const ComponentTypeId componentTypeId = ComponentType::GetTypeName();
+			const ComponentTypeId componentTypeId = ComponentType::GetTypeId();
 
 			auto componentPoolRawPtr = new (std::nothrow) ComponentPool<ComponentType, PageSize>(preallocatedPagesCount);
 			mComponentPools.emplace_back(componentPoolRawPtr);

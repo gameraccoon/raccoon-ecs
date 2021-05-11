@@ -34,7 +34,7 @@ namespace RaccoonEcs
 		template<typename FirstComponent, typename... Components>
 		[[nodiscard]] auto getComponentVectors()
 		{
-			auto it = mData.find(FirstComponent::GetTypeName());
+			auto it = mData.find(FirstComponent::GetTypeId());
 
 			if (it == mData.end())
 			{

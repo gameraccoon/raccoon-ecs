@@ -62,13 +62,13 @@ namespace RaccoonEcs
 		template<typename ComponentType>
 		bool doesComponentExists()
 		{
-			return mComponents[ComponentType::GetTypeName()] != nullptr;
+			return mComponents[ComponentType::GetTypeId()] != nullptr;
 		}
 
 		template<typename ComponentType>
 		ComponentType* addComponent() noexcept
 		{
-			return static_cast<ComponentType*>(addComponentByType(ComponentType::GetTypeName()));
+			return static_cast<ComponentType*>(addComponentByType(ComponentType::GetTypeId()));
 		}
 
 		void* addComponentByType(ComponentTypeId typeId) noexcept
@@ -82,7 +82,7 @@ namespace RaccoonEcs
 		template<typename ComponentType>
 		ComponentType* getOrAddComponent()
 		{
-			auto it = mComponents.find(ComponentType::GetTypeName());
+			auto it = mComponents.find(ComponentType::GetTypeId());
 			if (it == mComponents.end())
 			{
 				return addComponent<ComponentType>();
@@ -139,7 +139,7 @@ namespace RaccoonEcs
 		template<typename Component>
 		Component* getSingleComponent()
 		{
-			auto it = mComponents.find(Component::GetTypeName());
+			auto it = mComponents.find(Component::GetTypeId());
 			if (it != mComponents.end())
 			{
 				return static_cast<Component*>(it->second);
@@ -153,7 +153,7 @@ namespace RaccoonEcs
 		template<typename Component>
 		const Component* getSingleComponent() const
 		{
-			auto it = mComponents.find(Component::GetTypeName());
+			auto it = mComponents.find(Component::GetTypeId());
 			if (it != mComponents.end())
 			{
 				return static_cast<Component*>(it->second);

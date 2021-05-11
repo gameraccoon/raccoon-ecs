@@ -203,7 +203,7 @@ namespace RaccoonEcs
 				return false;
 			}
 
-			std::vector<void*> componentVector = mComponents.getComponentVectorById(ComponentType::GetTypeName());
+			std::vector<void*> componentVector = mComponents.getComponentVectorById(ComponentType::GetTypeId());
 
 			return entityIdxItr->second < componentVector.size() && componentVector[entityIdxItr->second] != nullptr;
 		}
@@ -211,7 +211,7 @@ namespace RaccoonEcs
 		template<typename ComponentType>
 		ComponentType* addComponent(Entity entity)
 		{
-			return static_cast<ComponentType*>(addComponentByType(entity, ComponentType::GetTypeName()));
+			return static_cast<ComponentType*>(addComponentByType(entity, ComponentType::GetTypeId()));
 		}
 
 		void* addComponentByType(Entity entity, ComponentTypeId typeId)
@@ -236,7 +236,7 @@ namespace RaccoonEcs
 		template<typename ComponentType>
 		void removeComponent(Entity entity)
 		{
-			removeComponent(entity, ComponentType::GetTypeName());
+			removeComponent(entity, ComponentType::GetTypeId());
 		}
 
 		void removeComponent(Entity entity, ComponentTypeId typeId)
@@ -260,7 +260,7 @@ namespace RaccoonEcs
 		template<typename ComponentType>
 		ComponentType* scheduleAddComponent(Entity entity)
 		{
-			const ComponentTypeId componentTypeId = ComponentType::GetTypeName();
+			const ComponentTypeId componentTypeId = ComponentType::GetTypeId();
 			const auto createFn = mComponentFactory.getCreationFn(componentTypeId);
 			ComponentType* component = static_cast<ComponentType*>(createFn());
 			scheduleAddComponentToEntity(entity, component, componentTypeId);
@@ -275,7 +275,7 @@ namespace RaccoonEcs
 		template<typename ComponentType>
 		void scheduleRemoveComponent(Entity entity)
 		{
-			scheduleRemoveComponent(entity, ComponentType::GetTypeName());
+			scheduleRemoveComponent(entity, ComponentType::GetTypeId());
 		}
 
 		void scheduleRemoveComponent(Entity entity, ComponentTypeId typeId)
