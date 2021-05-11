@@ -63,7 +63,7 @@ namespace RaccoonEcs
 			if (entityIdxItr == mEntityIndexMap.end())
 			{
 #ifdef ECS_DEBUG_CHECKS_ENABLED
-			gErrorHandler("Trying to remove an entity that doesn't exist");
+				gErrorHandler("Trying to remove an entity that doesn't exist");
 #endif // ECS_DEBUG_CHECKS_ENABLED
 				return;
 			}
