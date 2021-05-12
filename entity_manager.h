@@ -63,7 +63,7 @@ namespace RaccoonEcs
 			if (entityIdxItr == mEntityIndexMap.end())
 			{
 #ifdef ECS_DEBUG_CHECKS_ENABLED
-				gErrorHandler("Trying to remove an entity that doesn't exist");
+				gErrorHandler(std::string("Trying to remove an entity that doesn't exist: ") + std::to_string(entity.getId()));
 #endif // ECS_DEBUG_CHECKS_ENABLED
 				return;
 			}
@@ -71,7 +71,7 @@ namespace RaccoonEcs
 
 			EntityIndex oldEntityIdx = entityIdxItr->second;
 
-			--mNextEntityIndex; // now it points to the element that going to be removed
+			--mNextEntityIndex; // now it points to the element that is going to be removed
 
 			for (auto& componentVector : mComponents)
 			{
@@ -110,6 +110,16 @@ namespace RaccoonEcs
 			onEntityRemoved.broadcast();
 		}
 
+		bool hasEntity(Entity entity)
+		{
+			return mEntityIndexMap.find(entity.getId()) != mEntityIndexMap.end();
+		}
+
+		[[nodiscard]] bool hasAnyEntities() const
+		{
+			return !mEntityIndexMap.empty();
+		}
+
 		[[nodiscard]] const std::unordered_map<Entity::EntityId, EntityIndex>& getEntities() const { return mEntityIndexMap; }
 
 		/**
@@ -119,7 +129,7 @@ namespace RaccoonEcs
 		 * Can produce collisions if between call to this function and call to tryInsertEntity
 		 * any work with entity happened that could produce new Entity registration
 		 */
-		Entity getNonExistentEntity()
+		[[nodiscard]] Entity getNonExistentEntity()
 		{
 			return Entity(mEntityGenerator.generateEntityId());
 		}
@@ -156,11 +166,11 @@ namespace RaccoonEcs
 			if (entityIdxItr != mEntityIndexMap.end())
 			{
 				EntityIndex index = entityIdxItr->second;
-				for (auto& componentArray : mComponents)
+				for (auto& componentVector : mComponents)
 				{
-					if (componentArray.second.size() > index && componentArray.second[index] != nullptr)
+					if (componentVector.second.size() > index && componentVector.second[index] != nullptr)
 					{
-						outComponents.emplace_back(componentArray.first, componentArray.second[index]);
+						outComponents.emplace_back(componentVector.first, componentVector.second[index]);
 					}
 				}
 			}
@@ -172,40 +182,37 @@ namespace RaccoonEcs
 			if (entityIdxItr != mEntityIndexMap.end())
 			{
 				EntityIndex index = entityIdxItr->second;
-				for (auto& componentArray : mComponents)
+				for (auto& componentVector : mComponents)
 				{
-					if (componentArray.second.size() > index && componentArray.second[index] != nullptr)
+					if (componentVector.second.size() > index && componentVector.second[index] != nullptr)
 					{
-						outComponents.emplace_back(componentArray.first, componentArray.second[index]);
+						outComponents.emplace_back(componentVector.first, componentVector.second[index]);
 					}
 				}
 			}
 		}
 
-		bool doesEntityHaveComponent(Entity entity, ComponentTypeId typeId)
+		[[nodiscard]] bool doesEntityHaveComponent(Entity entity, ComponentTypeId typeId) const
 		{
-			auto entityIdxItr = mEntityIndexMap.find(entity.getId());
+			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
 			if (entityIdxItr != mEntityIndexMap.end())
 			{
-				std::vector<void*>& componentArray = mComponents.getComponentVectorById(typeId);
-				EntityIndex index = entityIdxItr->second;
-				return (componentArray.size() > index && componentArray[index] != nullptr);
+				const std::vector<void*>& componentVector = mComponents.getComponentVectorById(typeId);
+				const EntityIndex index = entityIdxItr->second;
+				return (componentVector.size() > index && componentVector[index] != nullptr);
 			}
+
+#ifdef ECS_DEBUG_CHECKS_ENABLED
+			gErrorHandler(std::string("Trying to check component ") + std::to_string(typeId)
+				+ " of non-existing entity: " + std::to_string(entity.getId()));
+#endif // ECS_DEBUG_CHECKS_ENABLED
 			return false;
 		}
 
 		template<typename ComponentType>
-		bool doesEntityHaveComponent(Entity entity)
+		[[nodiscard]] bool doesEntityHaveComponent(Entity entity)
 		{
-			auto entityIdxItr = mEntityIndexMap.find(entity.getId());
-			if (entityIdxItr == mEntityIndexMap.end())
-			{
-				return false;
-			}
-
-			std::vector<void*> componentVector = mComponents.getComponentVectorById(ComponentType::GetTypeId());
-
-			return entityIdxItr->second < componentVector.size() && componentVector[entityIdxItr->second] != nullptr;
+			return doesEntityHaveComponent(entity, ComponentType::GetTypeId());
 		}
 
 		template<typename ComponentType>
@@ -227,6 +234,10 @@ namespace RaccoonEcs
 			auto entityIdxItr = mEntityIndexMap.find(entity.getId());
 			if (entityIdxItr == mEntityIndexMap.end())
 			{
+#ifdef ECS_DEBUG_CHECKS_ENABLED
+				gErrorHandler(std::string("Trying to add component ") + std::to_string(typeId)
+					+ " to a non-exsistent entity" + std::to_string(entity.getId()));
+#endif // ECS_DEBUG_CHECKS_ENABLED
 				return;
 			}
 
@@ -244,6 +255,10 @@ namespace RaccoonEcs
 			auto entityIdxItr = mEntityIndexMap.find(entity.getId());
 			if (entityIdxItr == mEntityIndexMap.end())
 			{
+#ifdef ECS_DEBUG_CHECKS_ENABLED
+				gErrorHandler(std::string("Trying to remove component ") + std::to_string(typeId)
+					+ " from a non-exsistent entity" + std::to_string(entity.getId()));
+#endif // ECS_DEBUG_CHECKS_ENABLED
 				return;
 			}
 
@@ -263,11 +278,11 @@ namespace RaccoonEcs
 			const ComponentTypeId componentTypeId = ComponentType::GetTypeId();
 			const auto createFn = mComponentFactory.getCreationFn(componentTypeId);
 			ComponentType* component = static_cast<ComponentType*>(createFn());
-			scheduleAddComponentToEntity(entity, component, componentTypeId);
+			scheduleAddComponent(entity, component, componentTypeId);
 			return component;
 		}
 
-		void scheduleAddComponentToEntity(Entity entity, void* component, ComponentTypeId typeId)
+		void scheduleAddComponent(Entity entity, void* component, ComponentTypeId typeId)
 		{
 			mScheduledComponentAdditions.emplace_back(entity, component, typeId);
 		}
@@ -464,12 +479,6 @@ namespace RaccoonEcs
 			}
 		}
 
-		bool hasEntity(Entity entity)
-		{
-			return mEntityIndexMap.find(entity.getId()) != mEntityIndexMap.end();
-		}
-
-
 		void transferEntityTo(EntityManager& otherManager, Entity entity)
 		{
 			AssertFatal(this != &otherManager, "Transferring entity to the same manager. This should never happen");
@@ -584,11 +593,6 @@ namespace RaccoonEcs
 		const ComponentMap& getComponentsData() const { return mComponents; }
 
 		auto getSortableData() { return std::make_tuple(std::ref(mComponents), std::ref(mEntityIndexMap), std::ref(mIndexEntityMap)); }
-
-		[[nodiscard]] bool hasAnyEntities() const
-		{
-			return !mEntityIndexMap.empty();
-		}
 
 	public:
 		MulticastDelegate<> onEntityAdded;
