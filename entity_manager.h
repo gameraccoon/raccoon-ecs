@@ -481,11 +481,20 @@ namespace RaccoonEcs
 
 		void transferEntityTo(EntityManager& otherManager, Entity entity)
 		{
-			AssertFatal(this != &otherManager, "Transferring entity to the same manager. This should never happen");
+			if (this == &otherManager)
+			{
+#ifdef ECS_DEBUG_CHECKS_ENABLED
+				gErrorHandler("Transferring entity to the same manager. This should never happen");
+#endif // ECS_DEBUG_CHECKS_ENABLED
+				return;
+			}
 
 			auto entityIdxItr = mEntityIndexMap.find(entity.getId());
 			if (entityIdxItr == mEntityIndexMap.end())
 			{
+#ifdef ECS_DEBUG_CHECKS_ENABLED
+				gErrorHandler(std::string("Trying transfer non-existent entity: ") + std::to_string(entity.getId()));
+#endif // ECS_DEBUG_CHECKS_ENABLED
 				return;
 			}
 
