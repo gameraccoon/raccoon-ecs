@@ -73,7 +73,7 @@ namespace RaccoonEcs
 		}
 
 #ifdef PROFILE_SYSTEMS
-	SystemsFrameTime SystemsManager::getPreviousFrameTimeData()
+	SystemsFrameTime getPreviousFrameTimeData()
 	{
 		return mPreviousFrameTime;
 	}
