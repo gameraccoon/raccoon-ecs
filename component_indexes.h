@@ -15,7 +15,7 @@ namespace RaccoonEcs
 		void updateIndex(const std::vector<std::tuple<Components*...>>& newData)
 		{
 			Index& index = getOrCreateIndex<false, Components...>();
-			auto data = *static_cast<std::vector<std::tuple<Components*...>>*>(index.data);
+			auto& data = *static_cast<std::vector<std::tuple<Components*...>>*>(index.data);
 			data = newData;
 			index.isValid = true;
 		}
@@ -24,7 +24,7 @@ namespace RaccoonEcs
 		void updateIndexWithData(const std::vector<std::tuple<Data, Components*...>>& newData)
 		{
 			Index& index = getOrCreateIndex<true, Components...>();
-			auto data = *static_cast<std::vector<std::tuple<Data, Components*...>>*>(index.data);
+			auto& data = *static_cast<std::vector<std::tuple<Data, Components*...>>*>(index.data);
 			data = newData;
 			index.isValid = true;
 		}
@@ -33,7 +33,7 @@ namespace RaccoonEcs
 		void appendFromIndex(std::vector<std::tuple<Components*...>>& outData)
 		{
 			Index& index = getOrCreateIndex<false, Components...>();
-			auto data = *static_cast<std::vector<std::tuple<Components*...>>*>(index.data);
+			auto& data = *static_cast<std::vector<std::tuple<Components*...>>*>(index.data);
 			outData.insert(std::end(outData), std::begin(data), std::end(data));
 		}
 
@@ -41,7 +41,7 @@ namespace RaccoonEcs
 		void appendFromIndexWithData(std::vector<std::tuple<Data, Components*...>>& outData)
 		{
 			Index& index = getOrCreateIndex<true, Components...>();
-			auto data = *static_cast<std::vector<std::tuple<Data, Components*...>>*>(index.data);
+			auto& data = *static_cast<std::vector<std::tuple<Data, Components*...>>*>(index.data);
 			outData.insert(std::end(outData), std::begin(data), std::end(data));
 		}
 
@@ -138,7 +138,7 @@ namespace RaccoonEcs
 					newIndex.data = static_cast<void*>(new std::vector<std::tuple<Data, Components*...>>);
 					newIndex.deleter = [](void* indexData)
 					{
-							delete static_cast<std::vector<std::tuple<Data, Components*...>>*>(indexData);
+						delete static_cast<std::vector<std::tuple<Data, Components*...>>*>(indexData);
 					};
 				}
 				else
