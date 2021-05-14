@@ -733,10 +733,18 @@ namespace RaccoonEcs
 			}
 			else
 			{
-				std::vector<std::tuple<Components*...>> newIndexData;
-				gatherNonIndexedComponents<Components...>(newIndexData);
-				mIndexes.template updateIndex(newIndexData);
-				inOutComponents.insert(std::end(inOutComponents), std::begin(newIndexData), std::end(newIndexData));
+				if (inOutComponents.empty())
+				{
+					gatherNonIndexedComponents<Components...>(inOutComponents);
+					mIndexes.template updateIndex(inOutComponents);
+				}
+				else
+				{
+					std::vector<std::tuple<Components* ...>> newIndexData;
+					gatherNonIndexedComponents<Components...>(newIndexData);
+					mIndexes.template updateIndex(newIndexData);
+					inOutComponents.insert(std::end(inOutComponents), std::begin(newIndexData), std::end(newIndexData));
+				}
 			}
 		}
 
@@ -749,10 +757,18 @@ namespace RaccoonEcs
 			}
 			else
 			{
-				std::vector<std::tuple<Entity, Components*...>> newIndexData;
-				gatherNonIndexedComponentsWithEntities<Components...>(newIndexData);
-				mIndexes.template updateIndexWithData(newIndexData);
-				inOutComponents.insert(std::end(inOutComponents), std::begin(newIndexData), std::end(newIndexData));
+				if (inOutComponents.empty())
+				{
+					gatherNonIndexedComponentsWithEntities<Components...>(inOutComponents);
+					mIndexes.template updateIndexWithData(inOutComponents);
+				}
+				else
+				{
+					std::vector<std::tuple<Entity, Components* ...>> newIndexData;
+					gatherNonIndexedComponentsWithEntities<Components...>(newIndexData);
+					mIndexes.template updateIndexWithData(newIndexData);
+					inOutComponents.insert(std::end(inOutComponents), std::begin(newIndexData), std::end(newIndexData));
+				}
 			}
 		}
 
