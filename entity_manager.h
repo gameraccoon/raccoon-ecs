@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include "component_factory.h"
+#include "component_indexes.h"
 #include "component_map.h"
 #include "delegates.h"
 #include "entity.h"
@@ -97,6 +98,7 @@ namespace RaccoonEcs
 						auto deleterFn = mComponentFactory.getDeletionFn(componentVector.first);
 						deleterFn(componentPtrRef);
 						componentPtrRef = nullptr;
+						mIndexes.invalidateForComponent(componentVector.first);
 					}
 
 					// if the vector contains the last entity
@@ -239,6 +241,7 @@ namespace RaccoonEcs
 				gErrorHandler(std::string("Trying to add component ") + std::to_string(typeId)
 					+ " to a non-exsistent entity" + std::to_string(entity.getId()));
 #endif // ECS_DEBUG_CHECKS_ENABLED
+				// memory leak here
 				return;
 			}
 
@@ -271,6 +274,8 @@ namespace RaccoonEcs
 				deleterFn(componentsVector[entityIdxItr->second]);
 				componentsVector[entityIdxItr->second] = nullptr;
 			}
+
+			mIndexes.invalidateForComponent(typeId);
 		}
 
 		template<typename ComponentType>
@@ -304,12 +309,14 @@ namespace RaccoonEcs
 			for (const auto& addition : mScheduledComponentAdditions)
 			{
 				addComponent(addition.entity, addition.component, addition.typeId);
+				mIndexes.invalidateForComponent(addition.typeId);
 			}
 			mScheduledComponentAdditions.clear();
 
 			for (const auto& removement : mScheduledComponentRemovements)
 			{
 				removeComponent(removement.entity, removement.typeId);
+				mIndexes.invalidateForComponent(removement.typeId);
 			}
 			mScheduledComponentRemovements.clear();
 		}
@@ -331,25 +338,17 @@ namespace RaccoonEcs
 		template<typename FirstComponent, typename... Components, typename... AdditionalData>
 		void getComponents(std::vector<std::tuple<AdditionalData..., FirstComponent*, Components*...>>& inOutComponents, AdditionalData... data)
 		{
-			auto componentVectors = mComponents.template getComponentVectors<FirstComponent, Components...>();
-			auto& firstComponentVector = std::get<0>(componentVectors);
-			size_t shortestVectorSize = GetShortestVector(componentVectors);
-
-			constexpr unsigned componentsSize = sizeof...(Components);
-
-			for (EntityIndex entityIndex = 0, iSize = shortestVectorSize; entityIndex < iSize; ++entityIndex)
+			if constexpr (sizeof...(AdditionalData) == 0)
 			{
-				auto& firstComponent = firstComponentVector[entityIndex];
-				if (firstComponent == nullptr)
+				appendComponentsIndexed<FirstComponent, Components...>(inOutComponents);
+			}
+			else
+			{
+				std::vector<std::tuple<FirstComponent*, Components*...>> components;
+				appendComponentsIndexed<FirstComponent, Components...>(components);
+				for (std::tuple<FirstComponent*, Components*...>& componentSet : components)
 				{
-					continue;
-				}
-
-				auto components = getEntityComponentSet<FirstComponent, Components...>(entityIndex, componentVectors);
-
-				if (std::get<componentsSize>(components) != nullptr)
-				{
-					inOutComponents.push_back(std::tuple_cat(std::make_tuple(data...), std::move(components)));
+					inOutComponents.push_back(std::tuple_cat(std::make_tuple(data...), std::move(componentSet)));
 				}
 			}
 		}
@@ -528,6 +527,7 @@ namespace RaccoonEcs
 
 					// remove the element from the old manager
 					componentVector.second[oldEntityIdx] = nullptr;
+					mIndexes.invalidateForComponent(componentVector.first);
 
 					// if the vector contains the last entity
 					if (entityToRemoveIdx < componentVector.second.size() && oldEntityIdx != entityToRemoveIdx)
@@ -571,6 +571,8 @@ namespace RaccoonEcs
 			}
 
 			mComponents.cleanEmptyVectors();
+
+			mIndexes.invalidateAll();
 		}
 
 		void clear()
@@ -597,6 +599,8 @@ namespace RaccoonEcs
 
 			mScheduledComponentAdditions.clear();
 			mScheduledComponentRemovements.clear();
+
+			mIndexes.invalidateAll();
 		}
 
 		const ComponentMap& getComponentsData() const { return mComponents; }
@@ -714,12 +718,57 @@ namespace RaccoonEcs
 				gErrorHandler("Trying to add a component when the entity already has one of the same type. This will result in memory leak");
 			}
 #endif // ECS_DEBUG_CHECKS_ENABLED
+			mIndexes.invalidateForComponent(typeId);
+		}
+
+		template<typename FirstComponent, typename... Components>
+		void gatherNonIndexedComponents(std::vector<std::tuple<FirstComponent*, Components*...>>& outComponents)
+		{
+			auto componentVectors = mComponents.template getComponentVectors<FirstComponent, Components...>();
+			auto& firstComponentVector = std::get<0>(componentVectors);
+			size_t shortestVectorSize = GetShortestVector(componentVectors);
+
+			constexpr unsigned componentsSize = sizeof...(Components);
+
+			for (EntityIndex entityIndex = 0, iSize = shortestVectorSize; entityIndex < iSize; ++entityIndex)
+			{
+				auto& firstComponent = firstComponentVector[entityIndex];
+				if (firstComponent == nullptr)
+				{
+					continue;
+				}
+
+				auto components = getEntityComponentSet<FirstComponent, Components...>(entityIndex, componentVectors);
+
+				if (std::get<componentsSize>(components) != nullptr)
+				{
+					outComponents.push_back(std::move(components));
+				}
+			}
+		}
+
+		template<typename... Components>
+		void appendComponentsIndexed(std::vector<std::tuple<Components*...>>& inOutComponents)
+		{
+			if (mIndexes.template isIndexValid<Components...>())
+			{
+				mIndexes.template appendFromIndex<Components...>(inOutComponents);
+			}
+			else
+			{
+				std::vector<std::tuple<Components*...>> newIndexData;
+				gatherNonIndexedComponents<Components...>(newIndexData);
+				mIndexes.template updateIndex(newIndexData);
+				inOutComponents.insert(std::end(inOutComponents), std::begin(newIndexData), std::end(newIndexData));
+			}
 		}
 
 	private:
 		ComponentMap mComponents;
 		std::vector<Entity> mEntities;
 		std::unordered_map<Entity::EntityId, EntityIndex> mEntityIndexMap;
+
+		ComponentIndexes<ComponentTypeId> mIndexes;
 
 		std::vector<ComponentToAdd> mScheduledComponentAdditions;
 		std::vector<ComponentToRemove> mScheduledComponentRemovements;
