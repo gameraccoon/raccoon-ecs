@@ -7,15 +7,24 @@
 
 namespace RaccoonEcs
 {
-	template <typename ComponentTypeId>
+	template <typename ComponentTypeId, typename Data = void>
 	class ComponentIndexes
 	{
 	public:
 		template<typename... Components>
 		void updateIndex(const std::vector<std::tuple<Components*...>>& newData)
 		{
-			Index& index = getOrCreateIndex<Components...>();
+			Index& index = getOrCreateIndex<false, Components...>();
 			auto data = *static_cast<std::vector<std::tuple<Components*...>>*>(index.data);
+			data = newData;
+			index.isValid = true;
+		}
+
+		template<typename... Components>
+		void updateIndexWithData(const std::vector<std::tuple<Data, Components*...>>& newData)
+		{
+			Index& index = getOrCreateIndex<true, Components...>();
+			auto data = *static_cast<std::vector<std::tuple<Data, Components*...>>*>(index.data);
 			data = newData;
 			index.isValid = true;
 		}
@@ -23,15 +32,23 @@ namespace RaccoonEcs
 		template<typename... Components>
 		void appendFromIndex(std::vector<std::tuple<Components*...>>& outData)
 		{
-			Index& index = getOrCreateIndex<Components...>();
+			Index& index = getOrCreateIndex<false, Components...>();
 			auto data = *static_cast<std::vector<std::tuple<Components*...>>*>(index.data);
 			outData.insert(std::end(outData), std::begin(data), std::end(data));
 		}
 
 		template<typename... Components>
+		void appendFromIndexWithData(std::vector<std::tuple<Data, Components*...>>& outData)
+		{
+			Index& index = getOrCreateIndex<true, Components...>();
+			auto data = *static_cast<std::vector<std::tuple<Data, Components*...>>*>(index.data);
+			outData.insert(std::end(outData), std::begin(data), std::end(data));
+		}
+
+		template<bool WithData, typename... Components>
 		bool isIndexValid()
 		{
-			const Index& index = getOrCreateIndex<Components...>();
+			const Index& index = getOrCreateIndex<WithData, Components...>();
 			return index.isValid;
 		}
 
@@ -54,17 +71,19 @@ namespace RaccoonEcs
 	private:
 		struct Key
 		{
-			Key(std::vector<ComponentTypeId>&& components)
+			Key(std::vector<ComponentTypeId>&& components, bool hasData)
 				: components(std::move(components))
+				, hasData(hasData)
 			{}
 
 			bool operator==(const Key& anotherKey) const
 			{
-				return components == anotherKey.components;
+				return hasData == anotherKey.hasData && components == anotherKey.components;
 			}
 
 			size_t hash = 0;
 			std::vector<ComponentTypeId> components;
+			bool hasData;
 		};
 
 		struct Index
@@ -88,36 +107,48 @@ namespace RaccoonEcs
 		};
 
 	private:
-		template<typename... Components>
+		template<bool HasData, typename... Components>
 		constexpr size_t calculateKeyHash()
 		{
-			std::size_t hash = 1u << 8;
+			std::size_t hash = (HasData ? 1u : 3u) << 8;
 			((hash = std::hash<ComponentTypeId>()(Components::GetTypeId()) ^ std::rotl(hash, 3)), ...);
 			return hash;
 		}
 
-		template<typename... Components>
+		template<bool HasData, typename... Components>
 		Key constructKey()
 		{
-			Key result{{ Components::GetTypeId()... }};
-			result.hash = calculateKeyHash<Components...>();
+			Key result{{Components::GetTypeId()...}, HasData};
+			result.hash = calculateKeyHash<HasData, Components...>();
 			return result;
 		}
 
-		template<typename... Components>
+		template<bool HasData, typename... Components>
 		Index& getOrCreateIndex()
 		{
-			static const Key key = constructKey<Components...>();
+			static const Key key = constructKey<HasData, Components...>();
 			auto it = mIndexes.find(key);
 			if (it == mIndexes.end())
 			{
 				std::tie(it, std::ignore) = mIndexes.try_emplace(key);
 				Index& newIndex = it->second;
-				newIndex.data = static_cast<void*>(new std::vector<std::tuple<Components*...>>);
-				newIndex.deleter = [](void* indexData)
+
+				if constexpr (HasData)
 				{
-					delete static_cast<std::vector<std::tuple<Components*...>>*>(indexData);
-				};
+					newIndex.data = static_cast<void*>(new std::vector<std::tuple<Data, Components*...>>);
+					newIndex.deleter = [](void* indexData)
+					{
+							delete static_cast<std::vector<std::tuple<Data, Components*...>>*>(indexData);
+					};
+				}
+				else
+				{
+					newIndex.data = static_cast<void*>(new std::vector<std::tuple<Components*...>>);
+					newIndex.deleter = [](void* indexData)
+					{
+						delete static_cast<std::vector<std::tuple<Components*...>>*>(indexData);
+					};
+				}
 
 				for (ComponentTypeId typeId : key.components)
 				{

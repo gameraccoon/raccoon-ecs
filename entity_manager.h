@@ -354,32 +354,19 @@ namespace RaccoonEcs
 		}
 
 		template<typename FirstComponent, typename... Components, typename... AdditionalData>
-		void getComponentsWithEntities(std::vector<std::tuple<Entity, AdditionalData..., FirstComponent*, Components*...>>& inOutComponents, AdditionalData... data)
+		void getComponentsWithEntities(std::vector<std::tuple<AdditionalData..., Entity, FirstComponent*, Components*...>>& inOutComponents, AdditionalData... data)
 		{
-			auto componentVectors = mComponents.template getComponentVectors<FirstComponent, Components...>();
-			auto& firstComponentVector = std::get<0>(componentVectors);
-			size_t shortestVectorSize = GetShortestVector(componentVectors);
-
-			constexpr unsigned componentsSize = sizeof...(Components);
-
-			for (EntityIndex entityIndex = 0, iSize = shortestVectorSize; entityIndex < iSize; ++entityIndex)
+			if constexpr (sizeof...(AdditionalData) == 0)
 			{
-				if (entityIndex >= shortestVectorSize)
+				appendComponentsWithEntityIndexed<FirstComponent, Components...>(inOutComponents);
+			}
+			else
+			{
+				std::vector<std::tuple<Entity, FirstComponent*, Components*...>> components;
+				appendComponentsWithEntityIndexed<FirstComponent, Components...>(components);
+				for (std::tuple<Entity, FirstComponent*, Components*...>& componentSet : components)
 				{
-					continue;
-				}
-
-				auto& firstComponent = firstComponentVector[entityIndex];
-				if (firstComponent == nullptr)
-				{
-					continue;
-				}
-
-				auto components = getEntityComponentSet<FirstComponent, Components...>(entityIndex, componentVectors);
-
-				if (std::get<componentsSize>(components) != nullptr)
-				{
-					inOutComponents.push_back(std::tuple_cat(std::make_tuple(mEntities[entityIndex]), std::make_tuple(data...), std::move(components)));
+					inOutComponents.push_back(std::tuple_cat(std::make_tuple(data...), std::move(componentSet)));
 				}
 			}
 		}
@@ -387,61 +374,22 @@ namespace RaccoonEcs
 		template<typename FirstComponent, typename... Components, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSet(FunctionType processor, AdditionalData... data)
 		{
-			auto componentVectors = mComponents.template getComponentVectors<FirstComponent, Components...>();
-			auto& firstComponentVector = std::get<0>(componentVectors);
-			size_t shortestVectorSize = GetShortestVector(componentVectors);
-
-			constexpr unsigned componentsSize = sizeof...(Components);
-
-			for (EntityIndex entityIndex = 0, iSize = shortestVectorSize; entityIndex < iSize; ++entityIndex)
+			std::vector<std::tuple<FirstComponent*, Components*...>> components;
+			appendComponentsIndexed<FirstComponent, Components...>(components);
+			for (std::tuple<FirstComponent*, Components*...>& componentSet : components)
 			{
-				auto& firstComponent = firstComponentVector[entityIndex];
-				if (firstComponent == nullptr)
-				{
-					continue;
-				}
-
-				auto components = getEntityComponentSet<FirstComponent, Components...>(entityIndex, componentVectors);
-
-				if (std::get<componentsSize>(components) == nullptr)
-				{
-					continue;
-				}
-
-				std::apply(processor, std::tuple_cat(std::make_tuple(data...), std::move(components)));
+				std::apply(processor, std::tuple_cat(std::make_tuple(data...), std::move(componentSet)));
 			}
 		}
 
 		template<typename FirstComponent, typename... Components, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSetWithEntity(FunctionType processor, AdditionalData... data)
 		{
-			auto componentVectors = mComponents.template getComponentVectors<FirstComponent, Components...>();
-			auto& firstComponentVector = std::get<0>(componentVectors);
-			const EntityIndex shortestVectorSize = GetShortestVector(componentVectors);
-
-			constexpr unsigned componentsSize = sizeof...(Components);
-
-			for (EntityIndex entityIndex = 0, iSize = shortestVectorSize; entityIndex < iSize; ++entityIndex)
+			std::vector<std::tuple<Entity, FirstComponent*, Components*...>> components;
+			appendComponentsWithEntityIndexed<FirstComponent, Components...>(components);
+			for (std::tuple<Entity, FirstComponent*, Components*...>& componentSet : components)
 			{
-				if (entityIndex >= shortestVectorSize)
-				{
-					continue;
-				}
-
-				auto& firstComponent = firstComponentVector[entityIndex];
-				if (firstComponent == nullptr)
-				{
-					continue;
-				}
-
-				auto components = getEntityComponentSet<FirstComponent, Components...>(entityIndex, componentVectors);
-
-				if (std::get<componentsSize>(components) == nullptr)
-				{
-					continue;
-				}
-
-				std::apply(processor, std::tuple_cat(std::make_tuple(mEntities[entityIndex]), std::make_tuple(data...), std::move(components)));
+				std::apply(processor, std::tuple_cat(std::make_tuple(data...), std::move(componentSet)));
 			}
 		}
 
@@ -747,10 +695,37 @@ namespace RaccoonEcs
 			}
 		}
 
+		template<typename FirstComponent, typename... Components>
+		void gatherNonIndexedComponentsWithEntities(std::vector<std::tuple<Entity, FirstComponent*, Components*...>>& outComponents)
+		{
+			auto componentVectors = mComponents.template getComponentVectors<FirstComponent, Components...>();
+			auto& firstComponentVector = std::get<0>(componentVectors);
+			size_t shortestVectorSize = GetShortestVector(componentVectors);
+
+			constexpr unsigned componentsSize = sizeof...(Components);
+
+			for (EntityIndex entityIndex = 0, iSize = shortestVectorSize; entityIndex < iSize; ++entityIndex)
+			{
+				auto& firstComponent = firstComponentVector[entityIndex];
+				if (firstComponent == nullptr)
+				{
+					continue;
+				}
+
+				auto components = getEntityComponentSet<FirstComponent, Components...>(entityIndex, componentVectors);
+
+				if (std::get<componentsSize>(components) != nullptr)
+				{
+					outComponents.push_back(
+							std::tuple_cat(std::make_tuple(mEntities[entityIndex]), std::move(components)));
+				}
+			}
+		}
+
 		template<typename... Components>
 		void appendComponentsIndexed(std::vector<std::tuple<Components*...>>& inOutComponents)
 		{
-			if (mIndexes.template isIndexValid<Components...>())
+			if (mIndexes.template isIndexValid<false, Components...>())
 			{
 				mIndexes.template appendFromIndex<Components...>(inOutComponents);
 			}
@@ -763,12 +738,28 @@ namespace RaccoonEcs
 			}
 		}
 
+		template<typename... Components>
+		void appendComponentsWithEntityIndexed(std::vector<std::tuple<Entity, Components*...>>& inOutComponents)
+		{
+			if (mIndexes.template isIndexValid<true, Components...>())
+			{
+				mIndexes.template appendFromIndexWithData<Components...>(inOutComponents);
+			}
+			else
+			{
+				std::vector<std::tuple<Entity, Components*...>> newIndexData;
+				gatherNonIndexedComponentsWithEntities<Components...>(newIndexData);
+				mIndexes.template updateIndexWithData(newIndexData);
+				inOutComponents.insert(std::end(inOutComponents), std::begin(newIndexData), std::end(newIndexData));
+			}
+		}
+
 	private:
 		ComponentMap mComponents;
 		std::vector<Entity> mEntities;
 		std::unordered_map<Entity::EntityId, EntityIndex> mEntityIndexMap;
 
-		ComponentIndexes<ComponentTypeId> mIndexes;
+		ComponentIndexes<ComponentTypeId, Entity> mIndexes;
 
 		std::vector<ComponentToAdd> mScheduledComponentAdditions;
 		std::vector<ComponentToRemove> mScheduledComponentRemovements;
