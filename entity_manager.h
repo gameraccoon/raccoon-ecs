@@ -346,6 +346,7 @@ namespace RaccoonEcs
 			{
 				std::vector<std::tuple<FirstComponent*, Components*...>> components;
 				appendComponentsIndexed<FirstComponent, Components...>(components);
+				inOutComponents.reserve(inOutComponents.size() + components.size());
 				for (std::tuple<FirstComponent*, Components*...>& componentSet : components)
 				{
 					inOutComponents.push_back(std::tuple_cat(std::make_tuple(data...), std::move(componentSet)));
@@ -364,6 +365,7 @@ namespace RaccoonEcs
 			{
 				std::vector<std::tuple<Entity, FirstComponent*, Components*...>> components;
 				appendComponentsWithEntityIndexed<FirstComponent, Components...>(components);
+				inOutComponents.reserve(inOutComponents.size() + components.size());
 				for (std::tuple<Entity, FirstComponent*, Components*...>& componentSet : components)
 				{
 					inOutComponents.push_back(std::tuple_cat(std::make_tuple(data...), std::move(componentSet)));
