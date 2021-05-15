@@ -62,9 +62,12 @@ namespace RaccoonEcs
 
 		void invalidateForComponent(ComponentTypeId typeId)
 		{
-			for (Index* index : mIndexesBoundToComponent[typeId])
+			if (auto it = mIndexesBoundToComponent.find(typeId); it != mIndexesBoundToComponent.end())
 			{
-				index->isValid = false;
+				for (Index* index : it->second)
+				{
+					index->isValid = false;
+				}
 			}
 		}
 
