@@ -30,8 +30,8 @@ namespace RaccoonEcs
 
 	public:
 		/**
-		 * @param componentFactory should be a reference to a ComponentFactory object that has longer lifetime than this EntityManager
-		 * @param entityGenerator should be a reference to an EntityGenerator object that has longer lifetime than this EntityManager
+		 * @param componentFactory  Should be a reference to a ComponentFactory object that has longer lifetime than this EntityManager
+		 * @param entityGenerator  Should be a reference to an EntityGenerator object that has longer lifetime than this EntityManager
 		 */
 		EntityManagerImpl(const ComponentFactory& componentFactory, EntityGenerator& entityGenerator)
 			: mComponentFactory(componentFactory)
@@ -48,6 +48,10 @@ namespace RaccoonEcs
 		EntityManagerImpl(EntityManagerImpl&&) = delete;
 		EntityManagerImpl& operator=(EntityManagerImpl&&) = delete;
 
+		/**
+		 * @brief Generates a new unique entity and adds it to this manager
+		 * @return The newly created entity
+		 */
 		Entity addEntity()
 		{
 			const Entity::EntityId id = mEntityGenerator.generateAndRegisterEntityId();
@@ -58,6 +62,11 @@ namespace RaccoonEcs
 			return Entity(id);
 		}
 
+		/**
+		 * @brief Removes the given entity from the manager, and unregisters its ID, so it can be reused
+		 * again in any manager in future
+		 * @param entityToRemove  The entity that should be removed, should be bound to this manager
+		 */
 		void removeEntity(Entity entityToRemove)
 		{
 			const auto entityToRemoveIdxItr = mEntityIndexMap.find(entityToRemove.getId());
@@ -113,16 +122,27 @@ namespace RaccoonEcs
 			onEntityRemoved.broadcast();
 		}
 
+		/**
+		 * @brief Checks if the entity is exists in this manager
+		 */
 		bool hasEntity(Entity entity)
 		{
 			return mEntityIndexMap.find(entity.getId()) != mEntityIndexMap.end();
 		}
 
+		/**
+		 * @brief Returns true if this manager has any entities
+		 * If it doesn't have any entities it's pretty much doesn't have any valuable data
+		 * since EntityManager can't contain components not bound to entities
+		 */
 		[[nodiscard]] bool hasAnyEntities() const
 		{
 			return !mEntities.empty();
 		}
 
+		/**
+		 * @brief Returns list of entities that are stored in this manager
+		 */
 		[[nodiscard]] const std::vector<Entity>& getEntities() const { return mEntities; }
 
 		/**
@@ -138,8 +158,8 @@ namespace RaccoonEcs
 		}
 
 		/**
-		 * @brief Try to insert an entity to then reconstruct its previous state (e.g. during deserialization)
-		 * @param entity  an entity that need to be inserted
+		 * @brief Tries to insert an entity to then reconstruct its previous state (e.g. during deserialization)
+		 * @param entity  The entity that need to be inserted
 		 * @return true if entity was added, false if it collided with some existent entity
 		 *
 		 * This function should succeed if no other entities were created between removing this
@@ -163,6 +183,11 @@ namespace RaccoonEcs
 			return successfullyRegistered;
 		}
 
+		/**
+		 * @brief Collects components that belongs to the given entity and returns them together with their types
+		 * @param entity  The entity whose components are collected
+		 * @param outComponents  The list of components belonging to the entity with their types
+		 */
 		void getAllEntityComponents(Entity entity, std::vector<TypedComponent>& outComponents)
 		{
 			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
@@ -179,6 +204,11 @@ namespace RaccoonEcs
 			}
 		}
 
+		/**
+		 * @brief Collects components that belongs to the given entity and returns them together with their types
+		 * @param entity  The entity whose components are collected
+		 * @param outComponents  The list of constant components belonging to the entity with their types
+		 */
 		void getAllEntityComponents(Entity entity, std::vector<ConstTypedComponent>& outComponents) const
 		{
 			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
@@ -195,6 +225,9 @@ namespace RaccoonEcs
 			}
 		}
 
+		/**
+		 * @brief Checks if the given entity has the given component
+		 */
 		[[nodiscard]] bool doesEntityHaveComponent(Entity entity, ComponentTypeId typeId) const
 		{
 			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
@@ -212,18 +245,37 @@ namespace RaccoonEcs
 			return false;
 		}
 
+		/**
+		 * @brief Checks if the given entity has the given component
+		 */
 		template<typename ComponentType>
 		[[nodiscard]] bool doesEntityHaveComponent(Entity entity)
 		{
 			return doesEntityHaveComponent(entity, ComponentType::GetTypeId());
 		}
 
+		/**
+		 * @brief Adds a new default-initialized component to the given entity and returns pointer to it
+		 * @param entity  The entity that will own the component
+		 * @return A pointer to the newly created default-initialized component
+		 *
+		 * Beware that the entity should not have the component of the given type prior calling the function
+		 * otherwise the call can result with memory leak
+		 */
 		template<typename ComponentType>
 		ComponentType* addComponent(Entity entity)
 		{
 			return static_cast<ComponentType*>(addComponentByType(entity, ComponentType::GetTypeId()));
 		}
 
+		/**
+		 * @brief Adds a new default-initialized component to the given entity and returns pointer to it
+		 * @param entity  The entity that will own the component
+		 * @return A pointer to the newly created default-initialized component
+		 *
+		 * Beware that the entity should not have the component of the given type prior calling the function
+		 * otherwise the call can result with memory leak
+		 */
 		void* addComponentByType(Entity entity, ComponentTypeId typeId)
 		{
 			const auto createFn = mComponentFactory.getCreationFn(typeId);
@@ -232,6 +284,16 @@ namespace RaccoonEcs
 			return component;
 		}
 
+		/**
+		 * @brief Adds the given component with the given type to the entity
+		 * @param entity  The entity that will own the component
+		 * @param component  The pointer to the existent component. should not belong to any other entity
+		 * @param typeId  The type of the given component
+		 *
+		 * Beware that the entity should not have the component of the given type prior calling the function
+		 * otherwise the entity won't be added and no indication of it will be provided, effectively producing
+		 * a memory leak.
+		 */
 		void addComponent(Entity entity, void* component, ComponentTypeId typeId)
 		{
 			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
@@ -248,6 +310,10 @@ namespace RaccoonEcs
 			addComponentToEntity(entityIdxItr->second, component, typeId);
 		}
 
+		/**
+		 * @brief Removes the component of the given type that the entity owns and destroys it
+		 * @param entity  The entity owning the component
+		 */
 		template<typename ComponentType>
 		void removeComponent(Entity entity)
 		{
@@ -278,6 +344,16 @@ namespace RaccoonEcs
 			mIndexes.invalidateForComponent(typeId);
 		}
 
+		/**
+		 * @brief Creates a component of the given type and chedules its addition to the given entity
+		 * @param entity  The entity that will own the component
+		 * @return  A pointer to the newly created default-initialized component
+		 *
+		 * You can use the component right away, but it won't be querried before `executeScheduledActions` called.
+		 *
+		 * Beware that the entity should not have the component of the given type prior `executeScheduledActions`
+		 * called otherwise the call can result with memory leak
+		 */
 		template<typename ComponentType>
 		ComponentType* scheduleAddComponent(Entity entity)
 		{
@@ -288,22 +364,41 @@ namespace RaccoonEcs
 			return component;
 		}
 
+		/**
+		 * @brief Creates a component of the given type and chedules its addition to the given entity
+		 * @param entity  The entity that will own the component
+		 * @return  A pointer to the newly created default-initialized component
+		 *
+		 * You can use the component right away, but it won't be querried before `executeScheduledActions` called.
+		 *
+		 * Beware that the entity should not have the component of the given type prior `executeScheduledActions`
+		 * called otherwise the call can result with memory leak
+		 */
 		void scheduleAddComponent(Entity entity, void* component, ComponentTypeId typeId)
 		{
 			mScheduledComponentAdditions.emplace_back(entity, component, typeId);
 		}
 
+		/**
+		 * @brief Schedules removing the component of the given type from the given entity
+		 */
 		template<typename ComponentType>
 		void scheduleRemoveComponent(Entity entity)
 		{
 			scheduleRemoveComponent(entity, ComponentType::GetTypeId());
 		}
 
+		/**
+		 * @brief Schedules removing the component of the given type from the given entity
+		 */
 		void scheduleRemoveComponent(Entity entity, ComponentTypeId typeId)
 		{
 			mScheduledComponentRemovements.emplace_back(entity, typeId);
 		}
 
+		/**
+		 * @brief Executes scheduled action, such as component additions and removements
+		 */
 		void executeScheduledActions()
 		{
 			for (const auto& addition : mScheduledComponentAdditions)
@@ -321,6 +416,11 @@ namespace RaccoonEcs
 			mScheduledComponentRemovements.clear();
 		}
 
+		/**
+		 * @brief Get specific component set belonging to the given entity
+		 * @return Returns the component set the the entity owns all the components,
+		 * otherwise can return components partially (part of them can be nullptr)
+		 */
 		template<typename... Components>
 		std::tuple<Components*...> getEntityComponents(Entity entity)
 		{
@@ -335,6 +435,14 @@ namespace RaccoonEcs
 			return getEntityComponentSet<Components...>(entityIdx, componentVectors);
 		}
 
+		/**
+		 * @brief Collects component sets from entities that has all the given components,
+		 * appends the result to the in-out argument
+		 * @param inOutComponents  The vector of tuples of component pointers, matched data will
+		 * be appended to the vector
+		 * @param data  Additional data, will be added to each matched record. Can be useful to
+		 * identify a specific manager
+		 */
 		template<typename FirstComponent, typename... Components, typename... AdditionalData>
 		void getComponents(std::vector<std::tuple<AdditionalData..., FirstComponent*, Components*...>>& inOutComponents, AdditionalData... data)
 		{
@@ -354,6 +462,14 @@ namespace RaccoonEcs
 			}
 		}
 
+		/**
+		 * @brief Collects enrities that has all the given components together with components,
+		 * appends the result to the in-out argument
+		 * @param inOutComponents  The vector of tuples of component pointers, matched data will
+		 * be appended to the vector
+		 * @param data  Additional data, will be added to each matched record. Can be useful to
+		 * identify a specific manager
+		 */
 		template<typename FirstComponent, typename... Components, typename... AdditionalData>
 		void getComponentsWithEntities(std::vector<std::tuple<AdditionalData..., Entity, FirstComponent*, Components*...>>& inOutComponents, AdditionalData... data)
 		{
@@ -373,6 +489,12 @@ namespace RaccoonEcs
 			}
 		}
 
+		/**
+		 * @brief Applies the given callable to all the component sets from matched entities
+		 * @param processor  The callable that will be applied to the mathced component sets
+		 * @param data  Additional data, will be added to each matched record. Can be useful
+		 * to identify a specific manager
+		 */
 		template<typename FirstComponent, typename... Components, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSet(FunctionType processor, AdditionalData... data)
 		{
@@ -384,6 +506,13 @@ namespace RaccoonEcs
 			}
 		}
 
+		/**
+		 * @brief Applies the given callable to all the entities together with component sets
+		 * that have all the given components
+		 * @param processor  The callable that will be applied to the mathced component sets
+		 * @param data  Additional data, will be added to each matched record. Can be useful
+		 * to identify a specific manager
+		 */
 		template<typename FirstComponent, typename... Components, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSetWithEntity(FunctionType processor, AdditionalData... data)
 		{
@@ -395,6 +524,11 @@ namespace RaccoonEcs
 			}
 		}
 
+		/**
+		 * @brief Collects entities that have all of the given components and appends them to in-out argument
+		 * @param componentIndexes  Vector of types that need to be checked
+		 * @param inOutEntities  Vector of entities that matched entities will be appended to
+		 */
 		void getEntitiesHavingComponents(const std::vector<ComponentTypeId>& componentIndexes, std::vector<Entity>& inOutEntities) const
 		{
 			if (componentIndexes.empty())
@@ -429,6 +563,13 @@ namespace RaccoonEcs
 			}
 		}
 
+		/**
+		 * @brief Transfers the given entity together with its components to another manager
+		 * @param otherManager  The manager to which the entity will be transfer to
+		 * @param entity  The enitity that will be transfered
+		 *
+		 * The components are guaranteed not to be moved in the memory.
+		 */
 		void transferEntityTo(EntityManager& otherManager, Entity entity)
 		{
 			if (this == &otherManager)
@@ -500,6 +641,10 @@ namespace RaccoonEcs
 			mEntities.pop_back();
 		}
 
+		/**
+		 * @brief Shrinks the vectors of components to elliminate empty elements at the end, and
+		 * remove empty vectors
+		 */
 		void clearCaches()
 		{
 			for (auto& componentVectorPair : mComponents)
@@ -521,10 +666,11 @@ namespace RaccoonEcs
 			}
 
 			mComponents.cleanEmptyVectors();
-
-			mIndexes.invalidateAll();
 		}
 
+		/**
+		 * @brief Delete all entities and components stored in the manager
+		 */
 		void clear()
 		{
 			for (auto& componentVector : mComponents)
@@ -553,8 +699,17 @@ namespace RaccoonEcs
 			mIndexes.invalidateAll();
 		}
 
+		/**
+		 * @brief Get const component data
+		 *
+		 * Can be useful for serialization
+		 */
 		const ComponentMap& getComponentsData() const { return mComponents; }
 
+		/**
+		 * @brief Applies a function that suppose to sort the data before serializing
+		 * @param func  A callable that will accept references to inner data (can change in future)
+		 */
 		template<typename Func>
 		void applySortingFunction(Func&& func) {
 			func(mComponents, mEntities, mEntityIndexMap);
