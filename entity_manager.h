@@ -653,7 +653,7 @@ namespace RaccoonEcs
 			{
 				if (componentsVector.capacity() <= entityIdx)
 				{
-					componentsVector.reserve((entityIdx + 1) * 2);
+					componentsVector.reserve(std::max(static_cast<EntityIndex>(16), (entityIdx + 1) * 2));
 				}
 				componentsVector.resize(entityIdx + 1);
 			}
