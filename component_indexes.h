@@ -5,97 +5,161 @@
 #include <functional>
 #include <unordered_map>
 
+#include "component_map.h"
+
 namespace RaccoonEcs
 {
-	template <typename ComponentTypeId, typename Data = void>
+	template <typename ComponentTypeId>
 	class ComponentIndexes
 	{
 	public:
-		template<typename... Components>
-		void updateIndex(const std::vector<std::tuple<Components*...>>& newData)
-		{
-			Index& index = getOrCreateIndex<false, Components...>();
-			auto& data = *static_cast<std::vector<std::tuple<Components*...>>*>(index.data);
-			data = newData;
-			index.isValid = true;
-		}
+		using ComponentMap = ComponentMapImpl<ComponentTypeId>;
 
-		template<typename... Components>
-		void updateIndexWithData(const std::vector<std::tuple<Data, Components*...>>& newData)
+	public:
+		void onComponentAdded(ComponentTypeId typeId, size_t entityIndex, const ComponentMap& componentMap)
 		{
-			Index& index = getOrCreateIndex<true, Components...>();
-			auto& data = *static_cast<std::vector<std::tuple<Data, Components*...>>*>(index.data);
-			data = newData;
-			index.isValid = true;
-		}
-
-		template<typename... Components>
-		void appendFromIndex(std::vector<std::tuple<Components*...>>& outData)
-		{
-			Index& index = getOrCreateIndex<false, Components...>();
-			auto& data = *static_cast<std::vector<std::tuple<Components*...>>*>(index.data);
-			outData.insert(std::end(outData), std::begin(data), std::end(data));
-		}
-
-		template<typename... Components>
-		void appendFromIndexWithData(std::vector<std::tuple<Data, Components*...>>& outData)
-		{
-			Index& index = getOrCreateIndex<true, Components...>();
-			auto& data = *static_cast<std::vector<std::tuple<Data, Components*...>>*>(index.data);
-			outData.insert(std::end(outData), std::begin(data), std::end(data));
-		}
-
-		template<bool WithData, typename... Components>
-		bool isIndexValid()
-		{
-			const Index& index = getOrCreateIndex<WithData, Components...>();
-			return index.isValid;
-		}
-
-		void invalidateAll()
-		{
-			for (auto& pair : mIndexes)
+			if (auto it = mIndexesHavingComponent.find(typeId); it != mIndexesHavingComponent.end())
 			{
-				pair.second.isValid = false;
+				for (Index* index : it->second)
+				{
+					index->tryAddEntity(entityIndex, componentMap);
+				}
 			}
 		}
 
-		void invalidateForComponent(ComponentTypeId typeId)
+		void onComponentRemoved(ComponentTypeId typeId, size_t entityIndex)
 		{
-			for (Index* index : mIndexesBoundToComponent[typeId])
+			if (auto it = mIndexesHavingComponent.find(typeId); it != mIndexesHavingComponent.end())
 			{
-				index->isValid = false;
+				for (Index* index : it->second)
+				{
+					index->tryRemoveEntity(entityIndex);
+				}
+			}
+		}
+
+		void onEntityRemoved(size_t removedEntityIndex, size_t swappedEntityIndex)
+		{
+			for (auto& pair : mIndexes)
+			{
+				pair.second.removeEntityWithSwap(removedEntityIndex, swappedEntityIndex);
+			}
+		}
+
+		template<typename... Components>
+		const std::vector<size_t>& getIndex(const ComponentMap& componentMap)
+		{
+			Index& index = getOrCreateIndex<Components...>(componentMap);
+			return index.matchingEntities;
+		}
+
+		void clear()
+		{
+			for (auto& pair : mIndexes)
+			{
+				Index& index = pair.second;
+				index.matchingEntities.clear();
+				index.sparseArray.clear();
+			}
+		}
+
+		void rebuild(const ComponentMap& componentMap)
+		{
+			for (auto& pair : mIndexes)
+			{
+				Index& index = pair.second;
+				index.matchingEntities.clear();
+				index.sparseArray.clear();
+				populateIndex(index, componentMap);
 			}
 		}
 
 	private:
 		struct Key
 		{
-			Key(std::vector<ComponentTypeId>&& components, bool hasData)
-				: components(std::move(components))
-				, hasData(hasData)
-			{}
+			size_t hash = 0;
+			std::vector<ComponentTypeId> componentTypes;
+
+			Key(std::vector<ComponentTypeId>&& componentTypes)
+				: componentTypes(std::move(componentTypes))
+			{
+				std::sort(componentTypes.begin(), componentTypes.end());
+			}
 
 			bool operator==(const Key& anotherKey) const
 			{
-				return hasData == anotherKey.hasData && components == anotherKey.components;
+				return componentTypes == anotherKey.componentTypes;
 			}
-
-			size_t hash = 0;
-			std::vector<ComponentTypeId> components;
-			bool hasData;
 		};
 
 		struct Index
 		{
-			~Index()
+			constexpr static size_t InvalidIndex = std::numeric_limits<size_t>::max();
+
+			std::vector<size_t> matchingEntities;
+			std::vector<size_t> sparseArray;
+			std::vector<ComponentTypeId> componentTypes;
+
+			void tryAddEntity(size_t entityIndex, const ComponentMap& componentMap)
 			{
-				deleter(data);
+				for (ComponentTypeId typeId : componentTypes)
+				{
+					const std::vector<void*>& componentVector = componentMap.getComponentVectorById(typeId);
+					if (entityIndex >= componentVector.size() || componentVector[entityIndex] == nullptr)
+					{
+						return;
+					}
+				}
+
+				if (sparseArray.size() <= entityIndex)
+				{
+					sparseArray.reserve(sparseArray.size() * 2);
+					sparseArray.resize(entityIndex + 1, InvalidIndex);
+				}
+
+				sparseArray[entityIndex] = matchingEntities.size();
+				matchingEntities.push_back(entityIndex);
 			}
 
-			bool isValid = false;
-			void* data = nullptr;
-			std::function<void(void*)> deleter;
+			void tryRemoveEntity(size_t entityIndex)
+			{
+				if (entityIndex < sparseArray.size())
+				{
+					const size_t idx = sparseArray[entityIndex];
+					if (idx != InvalidIndex)
+					{
+						if (idx != matchingEntities.size() - 1)
+						{
+							sparseArray[matchingEntities.back()] = idx;
+							matchingEntities[idx] = matchingEntities.back();
+						}
+						sparseArray[entityIndex] = InvalidIndex;
+						matchingEntities.pop_back();
+					}
+				}
+			}
+
+			void removeEntityWithSwap(size_t removedEntityIndex, size_t swappedEntityIndex)
+			{
+				if (swappedEntityIndex < sparseArray.size() && sparseArray[swappedEntityIndex] != InvalidIndex)
+				{
+					if (sparseArray[removedEntityIndex] != InvalidIndex)
+					{
+						tryRemoveEntity(swappedEntityIndex);
+					}
+					else
+					{
+						size_t newSwappedIdx = sparseArray[swappedEntityIndex];
+						sparseArray[removedEntityIndex] = newSwappedIdx;
+						matchingEntities[newSwappedIdx] = removedEntityIndex;
+						sparseArray[swappedEntityIndex] = InvalidIndex;
+					}
+				}
+				else
+				{
+					tryRemoveEntity(removedEntityIndex);
+				}
+			}
 		};
 
 		struct KeyHasher
@@ -107,60 +171,87 @@ namespace RaccoonEcs
 		};
 
 	private:
-		template<bool HasData, typename... Components>
-		constexpr size_t calculateKeyHash()
+		static constexpr size_t calculateKeyHash(const std::vector<ComponentTypeId>& types)
 		{
-			std::size_t hash = (HasData ? 1u : 3u) << 8;
-			((hash = std::hash<ComponentTypeId>()(Components::GetTypeId()) ^ std::rotl(hash, 3)), ...);
+			std::size_t hash = 1u << 8;
+			for (ComponentTypeId typeId : types)
+			{
+				hash = std::hash<ComponentTypeId>()(typeId) ^ std::rotl(hash, 3);
+			}
 			return hash;
 		}
 
-		template<bool HasData, typename... Components>
-		Key constructKey()
+		template<typename... Components>
+		static Key constructKey()
 		{
-			Key result{{Components::GetTypeId()...}, HasData};
-			result.hash = calculateKeyHash<HasData, Components...>();
+			Key result{{Components::GetTypeId()...}};
+			result.hash = calculateKeyHash(result.componentTypes);
 			return result;
 		}
 
-		template<bool HasData, typename... Components>
-		Index& getOrCreateIndex()
+		template<typename... Components>
+		Index& getOrCreateIndex(const ComponentMap& componentMap)
 		{
-			static const Key key = constructKey<HasData, Components...>();
+			static const Key key = constructKey<Components...>();
 			auto it = mIndexes.find(key);
 			if (it == mIndexes.end())
 			{
 				std::tie(it, std::ignore) = mIndexes.try_emplace(key);
+
 				Index& newIndex = it->second;
+				newIndex.componentTypes = key.componentTypes;
+				populateIndex(newIndex, componentMap);
 
-				if constexpr (HasData)
+				for (ComponentTypeId typeId : key.componentTypes)
 				{
-					newIndex.data = static_cast<void*>(new std::vector<std::tuple<Data, Components*...>>);
-					newIndex.deleter = [](void* indexData)
-					{
-						delete static_cast<std::vector<std::tuple<Data, Components*...>>*>(indexData);
-					};
-				}
-				else
-				{
-					newIndex.data = static_cast<void*>(new std::vector<std::tuple<Components*...>>);
-					newIndex.deleter = [](void* indexData)
-					{
-						delete static_cast<std::vector<std::tuple<Components*...>>*>(indexData);
-					};
-				}
-
-				for (ComponentTypeId typeId : key.components)
-				{
-					mIndexesBoundToComponent[typeId].push_back(&it->second);
+					mIndexesHavingComponent[typeId].push_back(&it->second);
 				}
 			}
 			return it->second;
 		}
 
+		static void populateIndex(Index& inOutIndex, const ComponentMap& componentMap)
+		{
+			size_t shortestVectorSize = std::numeric_limits<size_t>::max();
+			std::vector<const std::vector<void*>*> componentVectors;
+			componentVectors.reserve(inOutIndex.componentTypes.size());
+			for (ComponentTypeId typeId : inOutIndex.componentTypes)
+			{
+				componentVectors.push_back(&componentMap.getComponentVectorById(typeId));
+				shortestVectorSize = std::min(shortestVectorSize, componentVectors.back()->size());
+			}
+
+			if (shortestVectorSize == std::numeric_limits<size_t>::max() || shortestVectorSize == 0)
+			{
+				return;
+			}
+
+			inOutIndex.sparseArray.resize(shortestVectorSize, Index::InvalidIndex);
+			for (size_t i = 0u; i < shortestVectorSize; ++i)
+			{
+				if (doesEntityHaveAllComponents(componentVectors, i))
+				{
+					inOutIndex.matchingEntities.push_back(i);
+					inOutIndex.sparseArray[i] = inOutIndex.matchingEntities.size() - 1;
+				}
+			}
+		}
+
+		static bool doesEntityHaveAllComponents(const std::vector<const std::vector<void*>*>& componentVectors, size_t i)
+		{
+			for (const std::vector<void*>* componentVector : componentVectors)
+			{
+				if ((*componentVector)[i] == nullptr)
+				{
+					return false;
+				}
+			}
+			return true;
+		}
+
 	private:
 		std::unordered_map<Key, Index, KeyHasher> mIndexes;
-		std::unordered_map<ComponentTypeId, std::vector<Index*>> mIndexesBoundToComponent;
+		std::unordered_map<ComponentTypeId, std::vector<Index*>> mIndexesHavingComponent;
 	};
 
 } // namespace RaccoonEcs

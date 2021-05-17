@@ -16,6 +16,26 @@
 
 namespace RaccoonEcs
 {
+	namespace TemplateTrick
+	{
+		// a trick to get index of a parameter pack argument by its type
+		template<typename Type, typename... Types>
+		struct Idx;
+
+		template<typename Type, typename... Types>
+		struct Idx<Type, Type, Types...> : std::integral_constant<std::size_t, 0>
+		{
+		};
+
+		template<typename Type, typename FirstType, typename... Types>
+		struct Idx<Type, FirstType, Types...> : std::integral_constant<std::size_t, 1 + Idx<Type, Types...>::value>
+		{
+		};
+
+		template<typename Type, typename... Types>
+		static constexpr std::size_t PackIdx = Idx<Type, Types...>::value;
+	}
+
 	template <typename ComponentTypeId>
 	class EntityManagerImpl
 	{
@@ -107,7 +127,6 @@ namespace RaccoonEcs
 						auto deleterFn = mComponentFactory.getDeletionFn(componentVector.first);
 						deleterFn(componentPtrRef);
 						componentPtrRef = nullptr;
-						mIndexes.invalidateForComponent(componentVector.first);
 					}
 
 					// if the vector contains the last entity
@@ -118,6 +137,8 @@ namespace RaccoonEcs
 					}
 				}
 			}
+
+			mIndexes.onEntityRemoved(oldEntityIdx, entityIndexToRemove);
 
 			onEntityRemoved.broadcast();
 		}
@@ -260,7 +281,7 @@ namespace RaccoonEcs
 		 * @return A pointer to the newly created default-initialized component
 		 *
 		 * Beware that the entity should not have the component of the given type prior calling the function
-		 * otherwise the call can result with memory leak
+		 * otherwise the call can result in memory leak or UB
 		 */
 		template<typename ComponentType>
 		ComponentType* addComponent(Entity entity)
@@ -274,7 +295,7 @@ namespace RaccoonEcs
 		 * @return A pointer to the newly created default-initialized component
 		 *
 		 * Beware that the entity should not have the component of the given type prior calling the function
-		 * otherwise the call can result with memory leak
+		 * otherwise the call can result with memory leak or UB
 		 */
 		void* addComponentByType(Entity entity, ComponentTypeId typeId)
 		{
@@ -292,7 +313,7 @@ namespace RaccoonEcs
 		 *
 		 * Beware that the entity should not have the component of the given type prior calling the function
 		 * otherwise the entity won't be added and no indication of it will be provided, effectively producing
-		 * a memory leak.
+		 * a memory leak or UB
 		 */
 		void addComponent(Entity entity, void* component, ComponentTypeId typeId)
 		{
@@ -327,21 +348,23 @@ namespace RaccoonEcs
 			{
 #ifdef ECS_DEBUG_CHECKS_ENABLED
 				gErrorHandler(std::string("Trying to remove component ") + std::to_string(typeId)
-					+ " from a non-existent entity" + std::to_string(entity.getId()));
+						+ " from a non-existent entity" + std::to_string(entity.getId()));
 #endif // ECS_DEBUG_CHECKS_ENABLED
 				return;
 			}
 
 			auto& componentsVector = mComponents.getComponentVectorById(typeId);
 
-			if (componentsVector.size() > entityIdxItr->second)
+			EntityIndex entityIdx = entityIdxItr->second;
+
+			if (entityIdx < componentsVector.size())
 			{
 				auto deleterFn = mComponentFactory.getDeletionFn(typeId);
-				deleterFn(componentsVector[entityIdxItr->second]);
-				componentsVector[entityIdxItr->second] = nullptr;
+				deleterFn(componentsVector[entityIdx]);
+				componentsVector[entityIdx] = nullptr;
 			}
 
-			mIndexes.invalidateForComponent(typeId);
+			mIndexes.onComponentRemoved(typeId, entityIdx);
 		}
 
 		/**
@@ -352,7 +375,7 @@ namespace RaccoonEcs
 		 * You can use the component right away, but it won't be querried before `executeScheduledActions` called.
 		 *
 		 * Beware that the entity should not have the component of the given type prior `executeScheduledActions`
-		 * called otherwise the call can result with memory leak
+		 * called otherwise the call can result with memory leak or UB
 		 */
 		template<typename ComponentType>
 		ComponentType* scheduleAddComponent(Entity entity)
@@ -372,7 +395,7 @@ namespace RaccoonEcs
 		 * You can use the component right away, but it won't be querried before `executeScheduledActions` called.
 		 *
 		 * Beware that the entity should not have the component of the given type prior `executeScheduledActions`
-		 * called otherwise the call can result with memory leak
+		 * called otherwise the call can result with memory leak or UB
 		 */
 		void scheduleAddComponent(Entity entity, void* component, ComponentTypeId typeId)
 		{
@@ -404,14 +427,12 @@ namespace RaccoonEcs
 			for (const auto& addition : mScheduledComponentAdditions)
 			{
 				addComponent(addition.entity, addition.component, addition.typeId);
-				mIndexes.invalidateForComponent(addition.typeId);
 			}
 			mScheduledComponentAdditions.clear();
 
 			for (const auto& removement : mScheduledComponentRemovements)
 			{
 				removeComponent(removement.entity, removement.typeId);
-				mIndexes.invalidateForComponent(removement.typeId);
 			}
 			mScheduledComponentRemovements.clear();
 		}
@@ -443,21 +464,30 @@ namespace RaccoonEcs
 		 * @param data  Additional data, will be added to each matched record. Can be useful to
 		 * identify a specific manager
 		 */
-		template<typename FirstComponent, typename... Components, typename... AdditionalData>
-		void getComponents(std::vector<std::tuple<AdditionalData..., FirstComponent*, Components*...>>& inOutComponents, AdditionalData... data)
+		template<typename... Components, typename... AdditionalData>
+		void getComponents(std::vector<std::tuple<AdditionalData..., Components* ...>>& inOutComponents, AdditionalData... data)
 		{
-			if constexpr (sizeof...(AdditionalData) == 0)
+			const std::vector<size_t>& componentIndexes = mIndexes.template getIndex<Components...>(mComponents);
+
+			if (!componentIndexes.empty())
 			{
-				appendComponentsIndexed<FirstComponent, Components...>(inOutComponents);
-			}
-			else
-			{
-				std::vector<std::tuple<FirstComponent*, Components*...>> components;
-				appendComponentsIndexed<FirstComponent, Components...>(components);
-				inOutComponents.reserve(inOutComponents.size() + components.size());
-				for (std::tuple<FirstComponent*, Components*...>& componentSet : components)
+				using namespace TemplateTrick;
+
+				if (inOutComponents.size() + componentIndexes.size() > inOutComponents.capacity())
 				{
-					inOutComponents.push_back(std::tuple_cat(std::make_tuple(data...), std::move(componentSet)));
+					inOutComponents.reserve(std::max(inOutComponents.size() + componentIndexes.size(), inOutComponents.size() * 2));
+				}
+
+				auto vectors = mComponents.template getComponentVectors<Components...>();
+
+				for (size_t index : componentIndexes)
+				{
+					inOutComponents.push_back(std::tuple_cat(
+						std::make_tuple(data...),
+						std::make_tuple(
+							static_cast<Components*>(std::get<PackIdx<Components, Components...>>(vectors)[index])...)
+						)
+					);
 				}
 			}
 		}
@@ -470,21 +500,31 @@ namespace RaccoonEcs
 		 * @param data  Additional data, will be added to each matched record. Can be useful to
 		 * identify a specific manager
 		 */
-		template<typename FirstComponent, typename... Components, typename... AdditionalData>
-		void getComponentsWithEntities(std::vector<std::tuple<AdditionalData..., Entity, FirstComponent*, Components*...>>& inOutComponents, AdditionalData... data)
+		template<typename... Components, typename... AdditionalData>
+		void getComponentsWithEntities(std::vector<std::tuple<AdditionalData..., Entity, Components* ...>>& inOutComponents, AdditionalData... data)
 		{
-			if constexpr (sizeof...(AdditionalData) == 0)
+			using namespace TemplateTrick;
+
+			const std::vector<size_t>& componentIndexes = mIndexes.template getIndex<Components...>(mComponents);
+
+			if (!componentIndexes.empty())
 			{
-				appendComponentsWithEntityIndexed<FirstComponent, Components...>(inOutComponents);
-			}
-			else
-			{
-				std::vector<std::tuple<Entity, FirstComponent*, Components*...>> components;
-				appendComponentsWithEntityIndexed<FirstComponent, Components...>(components);
-				inOutComponents.reserve(inOutComponents.size() + components.size());
-				for (std::tuple<Entity, FirstComponent*, Components*...>& componentSet : components)
+				if (inOutComponents.size() + componentIndexes.size() > inOutComponents.capacity())
 				{
-					inOutComponents.push_back(std::tuple_cat(std::make_tuple(data...), std::move(componentSet)));
+					inOutComponents.reserve(std::max(inOutComponents.size() + componentIndexes.size(), inOutComponents.size() * 2));
+				}
+
+				auto vectors = mComponents.template getComponentVectors<Components...>();
+
+				for (size_t index : componentIndexes)
+				{
+					inOutComponents.push_back(std::tuple_cat(
+						std::make_tuple(data...),
+						std::make_tuple(mEntities[index]),
+						std::make_tuple(
+							static_cast<Components*>(std::get<PackIdx<Components, Components...>>(vectors)[index])...)
+						)
+					);
 				}
 			}
 		}
@@ -495,14 +535,26 @@ namespace RaccoonEcs
 		 * @param data  Additional data, will be added to each matched record. Can be useful
 		 * to identify a specific manager
 		 */
-		template<typename FirstComponent, typename... Components, typename FunctionType, typename... AdditionalData>
+		template<typename... Components, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSet(FunctionType processor, AdditionalData... data)
 		{
-			std::vector<std::tuple<FirstComponent*, Components*...>> components;
-			appendComponentsIndexed<FirstComponent, Components...>(components);
-			for (std::tuple<FirstComponent*, Components*...>& componentSet : components)
+			using namespace TemplateTrick;
+
+			const std::vector<size_t>& componentIndexes = mIndexes.template getIndex<Components...>(mComponents);
+
+			if (!componentIndexes.empty())
 			{
-				std::apply(processor, std::tuple_cat(std::make_tuple(data...), std::move(componentSet)));
+				auto vectors = mComponents.template getComponentVectors<Components...>();
+
+				for (size_t index : componentIndexes)
+				{
+					std::apply(processor, std::tuple_cat(
+						std::make_tuple(data...),
+						std::make_tuple(
+							static_cast<Components*>(std::get<PackIdx<Components, Components...>>(vectors)[index])...)
+						)
+					);
+				}
 			}
 		}
 
@@ -513,14 +565,27 @@ namespace RaccoonEcs
 		 * @param data  Additional data, will be added to each matched record. Can be useful
 		 * to identify a specific manager
 		 */
-		template<typename FirstComponent, typename... Components, typename FunctionType, typename... AdditionalData>
+		template<typename... Components, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSetWithEntity(FunctionType processor, AdditionalData... data)
 		{
-			std::vector<std::tuple<Entity, FirstComponent*, Components*...>> components;
-			appendComponentsWithEntityIndexed<FirstComponent, Components...>(components);
-			for (std::tuple<Entity, FirstComponent*, Components*...>& componentSet : components)
+			using namespace TemplateTrick;
+
+			const std::vector<size_t>& componentIndexes = mIndexes.template getIndex<Components...>(mComponents);
+
+			if (!componentIndexes.empty())
 			{
-				std::apply(processor, std::tuple_cat(std::make_tuple(data...), std::move(componentSet)));
+				auto vectors = mComponents.template getComponentVectors<Components...>();
+
+				for (size_t index : componentIndexes)
+				{
+					std::apply(processor, std::tuple_cat(
+						std::make_tuple(data...),
+						std::make_tuple(mEntities[index]),
+						std::make_tuple(
+							static_cast<Components*>(std::get<PackIdx<Components, Components...>>(vectors)[index])...)
+						)
+					);
+				}
 			}
 		}
 
@@ -618,7 +683,6 @@ namespace RaccoonEcs
 
 					// remove the element from the old manager
 					componentVector.second[oldEntityIdx] = nullptr;
-					mIndexes.invalidateForComponent(componentVector.first);
 
 					// if the vector contains the last entity
 					if (entityToRemoveIdx < componentVector.second.size() && oldEntityIdx != entityToRemoveIdx)
@@ -639,6 +703,7 @@ namespace RaccoonEcs
 				std::swap(mEntities[entityToRemoveIdx], mEntities[oldEntityIdx]);
 			}
 			mEntities.pop_back();
+			mIndexes.onEntityRemoved(oldEntityIdx, entityToRemoveIdx);
 		}
 
 		/**
@@ -696,7 +761,7 @@ namespace RaccoonEcs
 			mScheduledComponentAdditions.clear();
 			mScheduledComponentRemovements.clear();
 
-			mIndexes.invalidateAll();
+			mIndexes.clear();
 		}
 
 		/**
@@ -713,6 +778,7 @@ namespace RaccoonEcs
 		template<typename Func>
 		void applySortingFunction(Func&& func) {
 			func(mComponents, mEntities, mEntityIndexMap);
+			mIndexes.rebuild(mComponents);
 		}
 
 	public:
@@ -820,10 +886,10 @@ namespace RaccoonEcs
 #ifdef ECS_DEBUG_CHECKS_ENABLED
 			else
 			{
-				gErrorHandler("Trying to add a component when the entity already has one of the same type. This will result in memory leak");
+				gErrorHandler("Trying to add a component when the entity already has one of the same type. This will result in UB");
 			}
 #endif // ECS_DEBUG_CHECKS_ENABLED
-			mIndexes.invalidateForComponent(typeId);
+			mIndexes.onComponentAdded(typeId, entityIdx, mComponents);
 		}
 
 		template<typename FirstComponent, typename... Components>
@@ -879,60 +945,12 @@ namespace RaccoonEcs
 			}
 		}
 
-		template<typename... Components>
-		void appendComponentsIndexed(std::vector<std::tuple<Components*...>>& inOutComponents)
-		{
-			if (mIndexes.template isIndexValid<false, Components...>())
-			{
-				mIndexes.template appendFromIndex<Components...>(inOutComponents);
-			}
-			else
-			{
-				if (inOutComponents.empty())
-				{
-					gatherNonIndexedComponents<Components...>(inOutComponents);
-					mIndexes.template updateIndex(inOutComponents);
-				}
-				else
-				{
-					std::vector<std::tuple<Components* ...>> newIndexData;
-					gatherNonIndexedComponents<Components...>(newIndexData);
-					mIndexes.template updateIndex(newIndexData);
-					inOutComponents.insert(std::end(inOutComponents), std::begin(newIndexData), std::end(newIndexData));
-				}
-			}
-		}
-
-		template<typename... Components>
-		void appendComponentsWithEntityIndexed(std::vector<std::tuple<Entity, Components*...>>& inOutComponents)
-		{
-			if (mIndexes.template isIndexValid<true, Components...>())
-			{
-				mIndexes.template appendFromIndexWithData<Components...>(inOutComponents);
-			}
-			else
-			{
-				if (inOutComponents.empty())
-				{
-					gatherNonIndexedComponentsWithEntities<Components...>(inOutComponents);
-					mIndexes.template updateIndexWithData(inOutComponents);
-				}
-				else
-				{
-					std::vector<std::tuple<Entity, Components* ...>> newIndexData;
-					gatherNonIndexedComponentsWithEntities<Components...>(newIndexData);
-					mIndexes.template updateIndexWithData(newIndexData);
-					inOutComponents.insert(std::end(inOutComponents), std::begin(newIndexData), std::end(newIndexData));
-				}
-			}
-		}
-
 	private:
 		ComponentMap mComponents;
 		std::vector<Entity> mEntities;
 		std::unordered_map<Entity::EntityId, EntityIndex> mEntityIndexMap;
 
-		ComponentIndexes<ComponentTypeId, Entity> mIndexes;
+		ComponentIndexes<ComponentTypeId> mIndexes;
 
 		std::vector<ComponentToAdd> mScheduledComponentAdditions;
 		std::vector<ComponentToRemove> mScheduledComponentRemovements;
