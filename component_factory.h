@@ -23,12 +23,15 @@ namespace RaccoonEcs
 		ComponentFactoryImpl(ComponentFactoryImpl&&) = delete;
 		ComponentFactoryImpl& operator=(ComponentFactoryImpl&&) = delete;
 
-		template<typename ComponentType, std::size_t PageSize = std::max(static_cast<std::size_t>(1), static_cast<std::size_t>(4096u / sizeof(ComponentType)))>
-		void registerComponent(size_t preallocatedPagesCount = 0)
+		template<typename ComponentType>
+		void registerComponent(
+			const size_t defaultChunkSize = std::max(static_cast<size_t>(1), static_cast<size_t>(4096u / sizeof(ComponentType))),
+			const bool needPreallocate = false,
+			const std::function<size_t(size_t)>& poolGrowStrategyFn = nullptr)
 		{
 			const ComponentTypeId componentTypeId = ComponentType::GetTypeId();
 
-			auto componentPoolRawPtr = new (std::nothrow) ComponentPool<ComponentType, PageSize>(preallocatedPagesCount);
+			auto componentPoolRawPtr = new (std::nothrow) ComponentPool<ComponentType>(defaultChunkSize, needPreallocate, poolGrowStrategyFn);
 			mComponentPools.emplace_back(componentPoolRawPtr);
 
 			mComponentCreators[componentTypeId] = [componentPoolRawPtr]{

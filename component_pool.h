@@ -3,6 +3,7 @@
 #include <array>
 #include <numeric>
 #include <vector>
+#include <functional>
 
 #include "error_handling.h"
 
@@ -14,24 +15,28 @@ namespace RaccoonEcs
 		virtual ~ComponentPoolBase() = default;
 	};
 
-	template <typename ComponentType, std::size_t PageSize>
+	template <typename ComponentType>
 	class ComponentPool final : public ComponentPoolBase
 	{
 	public:
-		ComponentPool(size_t preallocatedPages) noexcept
+		using PoolGrowStrategyFn = std::function<size_t(size_t)>;
+	public:
+		ComponentPool(size_t defaultChunkSize, bool needPreallocate = false, const PoolGrowStrategyFn& growStategyFn = nullptr) noexcept
+			: mDefaultChunkSize(defaultChunkSize)
+			, mGrowStrategyFn(growStategyFn)
 		{
-			for (size_t i = 0; i < preallocatedPages; ++i)
+			if (needPreallocate)
 			{
-				allocateNewPage();
+				allocateNewChunk();
 			}
 		}
 
 		~ComponentPool() final
 		{
 			// we assume that all the components were unregistered before component pool destruction
-			for (Page* page : mPages)
+			for (ComponentSlot* chunk : mChunks)
 			{
-				delete page;
+				delete[] chunk;
 			}
 		}
 
@@ -44,7 +49,7 @@ namespace RaccoonEcs
 		{
 			if (mNextFreeSlot == nullptr)
 			{
-				allocateNewPage();
+				allocateNewChunk();
 			}
 
 			ComponentSlot* takenSlot = mNextFreeSlot;
@@ -80,26 +85,50 @@ namespace RaccoonEcs
 			}
 		};
 
-		using Page = std::array<ComponentSlot, PageSize>;
-
 	private:
-		void allocateNewPage()
+		size_t getNewChunkSize() const
 		{
-			mPages.push_back(new (std::nothrow) Page);
-
-			Page& newPage = *mPages.back();
-			for (size_t i = 0; i < PageSize - 1; ++i)
+			if (mAllocatedComponentsCount == 0)
 			{
-				newPage[i].nextFreeSlot = &newPage[i + 1];
+				return mDefaultChunkSize;
+			}
+			else
+			{
+				if (mGrowStrategyFn)
+				{
+					return mGrowStrategyFn(mAllocatedComponentsCount);
+				}
+				else
+				{
+					return mAllocatedComponentsCount * 2;
+				}
+			}
+		}
+
+		void allocateNewChunk()
+		{
+			const size_t newChunkSize = getNewChunkSize();
+
+			mChunks.push_back(new (std::nothrow) ComponentSlot[newChunkSize]);
+
+			ComponentSlot* newChunk = mChunks.back();
+			for (size_t i = 0; i < newChunkSize - 1; ++i)
+			{
+				newChunk[i].nextFreeSlot = &newChunk[i + 1];
 			}
 
-			newPage[PageSize - 1].nextFreeSlot = mNextFreeSlot;
-			mNextFreeSlot = &newPage[0];
+			newChunk[newChunkSize - 1].nextFreeSlot = mNextFreeSlot;
+			mNextFreeSlot = &newChunk[0];
+
+			mAllocatedComponentsCount += newChunkSize;
 		}
 
 	private:
 		ComponentSlot* mNextFreeSlot = nullptr;
-		std::vector<Page*> mPages;
+		std::vector<ComponentSlot*> mChunks;
+		size_t mAllocatedComponentsCount = 0;
+		const size_t mDefaultChunkSize;
+		std::function<size_t(size_t)> mGrowStrategyFn;
 	};
 
 } // namespace RaccoonEcs
