@@ -74,7 +74,7 @@ namespace RaccoonEcs
 		 */
 		Entity addEntity()
 		{
-			const Entity::EntityId id = mEntityGenerator.generateAndRegisterEntityId();
+			const Entity::EntityId id = mEntityGenerator.generateNewEntityId();
 			EntityIndex newEntityIndex = mEntities.size();
 			mEntities.emplace_back(id);
 			mEntityIndexMap.emplace(id, newEntityIndex);
@@ -97,7 +97,6 @@ namespace RaccoonEcs
 #endif // ECS_DEBUG_CHECKS_ENABLED
 				return;
 			}
-			mEntityGenerator.unregisterEntityId(entityToRemove.getId());
 
 			const EntityIndex oldEntityIdx = entityToRemoveIdxItr->second;
 
@@ -175,33 +174,24 @@ namespace RaccoonEcs
 		 */
 		[[nodiscard]] Entity getNonExistentEntity()
 		{
-			return Entity(mEntityGenerator.generateEntityId());
+			return Entity(mEntityGenerator.generateNewEntityId());
 		}
 
 		/**
-		 * @brief Tries to insert an entity to then reconstruct its previous state (e.g. during deserialization)
+		 * @brief Inserts an entity to then reconstruct its previous state (e.g. during deserialization)
 		 * @param entity  The entity that need to be inserted
-		 * @return true if entity was added, false if it collided with some existent entity
-		 *
-		 * This function should succeed if no other entities were created between removing this
-		 * entity and calling this function with it, or all the new entities were removed before calling it.
-		 * The function checks not only for collisions inside this EntityManager but with all that share the
-		 * same EntityGenerator instance.
 		 *
 		 * Use cases: re-adding deleted entity by "undo" editor command, loading the game from save.
 		 */
-		bool tryInsertEntity(Entity entity)
+		void reinsertPrevioslyExistingEntity(Entity entity)
 		{
-			bool successfullyRegistered = mEntityGenerator.registerEntityId(entity.getId());
-			if (successfullyRegistered)
-			{
-				const EntityIndex newEntityId = mEntities.size();
-				mEntities.push_back(entity);
-				mEntityIndexMap.emplace(entity.getId(), newEntityId);
+			mEntityGenerator.registerEntityId(entity.getId());
 
-				onEntityAdded.broadcast();
-			}
-			return successfullyRegistered;
+			const EntityIndex newEntityId = mEntities.size();
+			mEntities.push_back(entity);
+			mEntityIndexMap.emplace(entity.getId(), newEntityId);
+
+			onEntityAdded.broadcast();
 		}
 
 		/**
@@ -749,11 +739,6 @@ namespace RaccoonEcs
 				componentVector.second.clear();
 			}
 			mComponents.cleanEmptyVectors();
-
-			for (Entity entity : mEntities)
-			{
-				mEntityGenerator.unregisterEntityId(entity.getId());
-			}
 
 			mEntities.clear();
 			mEntityIndexMap.clear();
