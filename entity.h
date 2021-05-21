@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "error_handling.h"
 
 namespace RaccoonEcs
@@ -7,7 +9,7 @@ namespace RaccoonEcs
 	class Entity
 	{
 	public:
-		using EntityId = unsigned int;
+		using EntityId = std::uint64_t;
 
 	public:
 		explicit Entity(EntityId id) : mId(id) {}
@@ -58,7 +60,7 @@ namespace RaccoonEcs
 		bool mIsValid = false;
 	};
 
-	static_assert(sizeof(Entity) == sizeof(unsigned int), "Entity is too big");
+	static_assert(sizeof(Entity) == 8, "Entity is too big");
 	static_assert(std::is_trivially_copyable<Entity>(), "Entity should be trivially copyable");
 	static_assert(std::is_trivially_copyable<OptionalEntity>(), "OptionalEntity should be trivially copyable");
 } // namespace RaccoonEcs
