@@ -697,6 +697,19 @@ namespace RaccoonEcs
 		}
 
 		/**
+		 * @brief Inits the index if it wasn't created
+		 *
+		 * This function is not necessary to call, indexes will be created automatically
+		 * when some request for components made, however you can do it in advance
+		 * (e.g. to reduce first frame time)
+		 */
+		template <typename... Components>
+		void initIndex()
+		{
+			mIndexes.template getIndex<Components...>(mComponents);
+		}
+
+		/**
 		 * @brief Shrinks the vectors of components to elliminate empty elements at the end, and
 		 * remove empty vectors
 		 */
