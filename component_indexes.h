@@ -113,7 +113,10 @@ namespace RaccoonEcs
 
 				if (sparseArray.size() <= entityIndex)
 				{
-					sparseArray.reserve(sparseArray.size() * 2);
+					if (sparseArray.capacity() < entityIndex + 1)
+					{
+						sparseArray.reserve(std::max(static_cast<size_t>(16), (entityIndex + 1) * 2));
+					}
 					sparseArray.resize(entityIndex + 1, InvalidIndex);
 				}
 
