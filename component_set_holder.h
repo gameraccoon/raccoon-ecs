@@ -11,7 +11,7 @@
 namespace RaccoonEcs
 {
 	/**
-	 * Use this class to store components specific for some non-entity object (e.g. for a World)
+	 * @brief This class can be used to store components specific for some non-entity object (e.g. for a World)
 	 */
 	template <typename ComponentTypeId>
 	class ComponentSetHolderImpl
@@ -21,6 +21,11 @@ namespace RaccoonEcs
 		using ConstTypedComponent = ConstTypedComponentImpl<ComponentTypeId>;
 		using ComponentFactory = ComponentFactoryImpl<ComponentTypeId>;
 
+		/**
+		 * @brief Constructs component set holder.
+		 * @param componentFactory  reference to an existent component factory that
+		 * should outlive this component set holder
+		 */
 		ComponentSetHolderImpl(const ComponentFactory& componentFactory)
 			: mComponentFactory(componentFactory)
 		{}
@@ -35,6 +40,10 @@ namespace RaccoonEcs
 		ComponentSetHolderImpl(ComponentSetHolderImpl&&) = default;
 		ComponentSetHolderImpl& operator=(ComponentSetHolderImpl&&) = default;
 
+		/**
+		 * @brief Gets all components stored in this component set holder
+		 * @return vector of non-null pointers to components together with their types
+		 */
 		std::vector<TypedComponent> getAllComponents()
 		{
 			std::vector<TypedComponent> components;
@@ -46,7 +55,11 @@ namespace RaccoonEcs
 
 			return components;
 		}
-
+\
+		/**
+		 * @brief Gets all components stored in this component set holder
+		 * @return vector of non-null constant pointers to components together with their types
+		 */
 		std::vector<ConstTypedComponent> getAllComponents() const
 		{
 			std::vector<ConstTypedComponent> components;
@@ -59,18 +72,30 @@ namespace RaccoonEcs
 			return components;
 		}
 
+		/**
+		 * @return true if the given components exists in this component set holder
+		 */
 		template<typename ComponentType>
 		bool doesComponentExists()
 		{
 			return mComponents[ComponentType::GetTypeId()] != nullptr;
 		}
 
+		/**
+		 * @brief Creates and adds component to this component set holder
+		 * @return pointer to a newly constructed component
+		 */
 		template<typename ComponentType>
 		ComponentType* addComponent() noexcept
 		{
 			return static_cast<ComponentType*>(addComponentByType(ComponentType::GetTypeId()));
 		}
 
+		/**
+		 * @brief Creates and adds component to this component set holder
+		 * @param typeId  type of component that needs to be created
+		 * @return pointer to a newly constructed component
+		 */
 		void* addComponentByType(ComponentTypeId typeId) noexcept
 		{
 			auto createFn = mComponentFactory.getCreationFn(typeId);
@@ -79,6 +104,27 @@ namespace RaccoonEcs
 			return component;
 		}
 
+		/**
+		 * @brief Adds an existent component to this component set
+		 * @param component  pointer to the component that needs to be added to this component set holder
+		 * @param typeId  type on the component that is being added
+		 *
+		 * Note: the component shouldn't be owned by any other component set holder or entity manager and
+		 * should be created from the same component factory that was used to construct this component set holder
+		 */
+		void addComponent(void* component, ComponentTypeId typeId)
+		{
+			if (component != nullptr && !mComponents.contains(typeId))
+			{
+				mComponents[typeId] = component;
+			}
+		}
+
+		/**
+		 * @brief Creates and adds the new component if it doesn't exist or
+		 * just returns the pointer to the existent component
+		 * @return non-null pointer to the component of the given type
+		 */
 		template<typename ComponentType>
 		ComponentType* getOrAddComponent()
 		{
@@ -90,14 +136,10 @@ namespace RaccoonEcs
 			return static_cast<ComponentType*>(it->second);
 		}
 
-		void addComponent(void* component, ComponentTypeId typeId)
-		{
-			if (component != nullptr && !mComponents.contains(typeId))
-			{
-				mComponents[typeId] = component;
-			}
-		}
-
+		/**
+		 * @brief Removes and destroys the component with the given type
+		 * @param typeId  type of the component that needs to be removed
+		 */
 		void removeComponent(ComponentTypeId typeId)
 		{
 			if (auto it = mComponents.find(typeId); it != mComponents.end())
@@ -108,6 +150,10 @@ namespace RaccoonEcs
 			}
 		}
 
+		/**
+		 * @return tuple of component pointers, either nullptr (if there's no such component)
+		 * or pointing to the existent component
+		 */
 		template<typename... Components>
 		std::tuple<Components*...> getComponents()
 		{
@@ -115,16 +161,27 @@ namespace RaccoonEcs
 		}
 
 		template<typename... Components>
+
+		/**
+		 * @return tuple of const component pointers, either nullptr (if there's no such component)
+		 * or pointing to the existent component
+		 */
 		std::tuple<const Components*...> getComponents() const
 		{
 			return std::make_tuple(getSingleComponent<Components>()...);
 		}
 
+		/**
+		 * @return true if the component set holder contain at least one component
+		 */
 		[[nodiscard]] bool hasAnyComponents() const
 		{
 			return !mComponents.empty();
 		}
 
+		/**
+		 * @brief Removes and desctoys all the components stored in this component set holder
+		 */
 		void removeAllComponents()
 		{
 			for (auto& component : mComponents)
