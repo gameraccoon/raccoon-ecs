@@ -6,6 +6,11 @@
 
 namespace RaccoonEcs
 {
+	/**
+	 * @brief Class that identifies one entity that can hold different components
+	 *
+	 * Should be always initialized
+	 */
 	class Entity
 	{
 	public:
@@ -24,6 +29,15 @@ namespace RaccoonEcs
 		EntityId mId;
 	};
 
+	/**
+	 * @brief Class that identifies one entity that can hold different components
+	 *
+	 * Can be default-initialized, in this case `isValid` returns false.
+	 *
+	 * Can be implicitly converted to Entity
+	 *
+	 * Note: getEntity and getId should not be called if the entity doesn't have a valid value
+	 */
 	class OptionalEntity
 	{
 	public:
