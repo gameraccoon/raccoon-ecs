@@ -34,7 +34,7 @@ namespace RaccoonEcs
 	 *
 	 * Can be default-initialized, in this case `isValid` returns false.
 	 *
-	 * Can be implicitly converted to Entity
+	 * Can be implicitly converted from Entity
 	 *
 	 * Note: getEntity and getId should not be called if the entity doesn't have a valid value
 	 */
@@ -48,24 +48,15 @@ namespace RaccoonEcs
 
 		[[nodiscard]] bool isValid() const { return mIsValid; }
 
-		[[nodiscard]] Entity getEntity() const noexcept {
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-			if (!mIsValid)
-			{
-				gErrorHandler("Getting uninitialized entity");
-			}
-#endif // ECS_DEBUG_CHECKS_ENABLED
+		[[nodiscard]] Entity getEntity() const noexcept
+		{
+			RACCOON_ECS_ASSERT(mIsValid, "Getting uninitialized entity");
 			return Entity(mId);
 		}
 
 		[[nodiscard]] Entity::EntityId getId() const noexcept
 		{
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-			if (!mIsValid)
-			{
-				gErrorHandler("Getting uninitialized entity");
-			}
-#endif // ECS_DEBUG_CHECKS_ENABLED
+			RACCOON_ECS_ASSERT(mIsValid, "Getting uninitialized entity");
 			return mId;
 		}
 

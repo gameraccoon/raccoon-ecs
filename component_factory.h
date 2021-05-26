@@ -52,9 +52,7 @@ namespace RaccoonEcs
 				return it->second;
 			}
 
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-			gErrorHandler(std::string("Unknown component type: '") + std::to_string(className) + "'");
-#endif // ECS_DEBUG_CHECKS_ENABLED
+			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + std::to_string(className) + "'");
 			return nullptr;
 		}
 
@@ -66,9 +64,7 @@ namespace RaccoonEcs
 				return it->second;
 			}
 
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-			gErrorHandler(std::string("Unknown component type: '") + std::to_string(className) + "'");
-#endif // ECS_DEBUG_CHECKS_ENABLED
+			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + std::to_string(className) + "'");
 			return nullptr;
 		}
 

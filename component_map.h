@@ -23,12 +23,7 @@ namespace RaccoonEcs
 
 		~ComponentMapImpl()
 		{
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-			if (!mEmptyVector.empty())
-			{
-				gErrorHandler("mEmptyVector has changed during runtime, that should never happen");
-			}
-#endif // ECS_DEBUG_CHECKS_ENABLED
+			RACCOON_ECS_ASSERT(mEmptyVector.empty(), "mEmptyVector has changed during runtime, that should never happen");
 		}
 
 		template<typename FirstComponent, typename... Components>
@@ -74,12 +69,7 @@ namespace RaccoonEcs
 				}
 			}
 
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-			if (!mEmptyVector.empty())
-			{
-				gErrorHandler("mEmptyVector should be empty");
-			}
-#endif // ECS_DEBUG_CHECKS_ENABLED
+			RACCOON_ECS_ASSERT(mEmptyVector.empty(), "mEmptyVector should be empty");
 		}
 
 		[[nodiscard]] Iterator begin() noexcept { return mData.begin(); }

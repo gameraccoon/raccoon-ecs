@@ -92,9 +92,7 @@ namespace RaccoonEcs
 			const auto entityToRemoveIdxItr = mEntityIndexMap.find(entityToRemove.getId());
 			if (entityToRemoveIdxItr == mEntityIndexMap.end())
 			{
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-				gErrorHandler(std::string("Trying to remove an entity that doesn't exist: ") + std::to_string(entityToRemove.getId()));
-#endif // ECS_DEBUG_CHECKS_ENABLED
+				RACCOON_ECS_ERROR(std::string("Trying to remove an entity that doesn't exist: ") + std::to_string(entityToRemove.getId()));
 				return;
 			}
 
@@ -249,10 +247,8 @@ namespace RaccoonEcs
 				return (componentVector.size() > index && componentVector[index] != nullptr);
 			}
 
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-			gErrorHandler(std::string("Trying to check component ") + std::to_string(typeId)
+			RACCOON_ECS_ERROR(std::string("Trying to check component ") + std::to_string(typeId)
 				+ " of non-existing entity: " + std::to_string(entity.getId()));
-#endif // ECS_DEBUG_CHECKS_ENABLED
 			return false;
 		}
 
@@ -310,10 +306,8 @@ namespace RaccoonEcs
 			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
 			if (entityIdxItr == mEntityIndexMap.end())
 			{
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-				gErrorHandler(std::string("Trying to add component ") + std::to_string(typeId)
+				RACCOON_ECS_ERROR(std::string("Trying to add component ") + std::to_string(typeId)
 					+ " to a non-exsistent entity" + std::to_string(entity.getId()));
-#endif // ECS_DEBUG_CHECKS_ENABLED
 				// memory leak here
 				return;
 			}
@@ -336,10 +330,8 @@ namespace RaccoonEcs
 			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
 			if (entityIdxItr == mEntityIndexMap.end())
 			{
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-				gErrorHandler(std::string("Trying to remove component ") + std::to_string(typeId)
+				RACCOON_ECS_ERROR(std::string("Trying to remove component ") + std::to_string(typeId)
 						+ " from a non-existent entity" + std::to_string(entity.getId()));
-#endif // ECS_DEBUG_CHECKS_ENABLED
 				return;
 			}
 
@@ -629,28 +621,19 @@ namespace RaccoonEcs
 		{
 			if (this == &otherManager)
 			{
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-				gErrorHandler("Transferring entity to the same manager. This should never happen");
-#endif // ECS_DEBUG_CHECKS_ENABLED
+				RACCOON_ECS_ERROR("Transferring entity to the same manager. This should never happen");
 				return;
 			}
 
 			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
 			if (entityIdxItr == mEntityIndexMap.end())
 			{
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-				gErrorHandler(std::string("Trying transfer non-existent entity: ") + std::to_string(entity.getId()));
-#endif // ECS_DEBUG_CHECKS_ENABLED
+				RACCOON_ECS_ERROR(std::string("Trying transfer non-existent entity: ") + std::to_string(entity.getId()));
 				return;
 			}
 
 			[[maybe_unused]] const auto insertionResult = otherManager.mEntityIndexMap.try_emplace(entity.getId(), otherManager.mEntities.size());
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-			if (!insertionResult.second)
-			{
-				gErrorHandler("EntityId is not unique, two entities collided during transfer. Make sure all entity managers use one shared EntityGenerator");
-			}
-#endif // ECS_DEBUG_CHECKS_ENABLED
+			RACCOON_ECS_ASSERT(insertionResult.second, "EntityId is not unique, two entities collided during transfer. Make sure all entity managers use one shared EntityGenerator");
 			otherManager.mEntities.push_back(entity);
 
 			const EntityIndex entityToRemoveIdx = mEntities.size() - 1;
@@ -881,12 +864,10 @@ namespace RaccoonEcs
 			{
 				componentsVector[entityIdx] = component;
 			}
-#ifdef ECS_DEBUG_CHECKS_ENABLED
 			else
 			{
-				gErrorHandler("Trying to add a component when the entity already has one of the same type. This will result in UB");
+				RACCOON_ECS_ERROR("Trying to add a component when the entity already has one of the same type. This will result in UB");
 			}
-#endif // ECS_DEBUG_CHECKS_ENABLED
 			mIndexes.onComponentAdded(typeId, entityIdx, mComponents);
 		}
 

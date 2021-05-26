@@ -121,12 +121,7 @@ namespace RaccoonEcs
 		{
 			if (fn)
 			{
-#ifdef ECS_DEBUG_CHECKS_ENABLED
-				if (mNextFunctionId > 10000)
-				{
-					gErrorHandler("Too many bindings to one delegate, possibility of overflow in the future");
-				}
-#endif // ECS_DEBUG_CHECKS_ENABLED
+				RACCOON_ECS_ASSERT(mNextFunctionId <= 10000, "Too many bindings to one delegate, possibility of overflow in the future");
 				Delegates::Handle newHandle(mNextFunctionId++);
 				mFunctions.emplace_back(newHandle, fn);
 				return newHandle;
