@@ -64,12 +64,6 @@ namespace RaccoonEcs
 			return entityManager.template scheduleAddComponent<Component>(entity);
 		}
 
-		template<typename EntityViewType>
-		Component* scheduleAddComponent(EntityViewType& entityView) const
-		{
-			return entityView.template scheduleAddComponent<Component>();
-		}
-
 		template<typename ComponentHolderType>
 		Component* getOrAddComponent(ComponentHolderType& componentHolder) const
 		{
@@ -88,9 +82,9 @@ namespace RaccoonEcs
 	{
 	public:
 		template<typename EntityManagerType>
-		Component* scheduleRemoveComponent(EntityManagerType& entityManager, Entity entity) const
+		void scheduleRemoveComponent(EntityManagerType& entityManager, Entity entity) const
 		{
-			return entityManager.template scheduleRemoveComponent<Component>(entity);
+			entityManager.template scheduleRemoveComponent<Component>(entity);
 		}
 
 		template<typename EntityViewType>
@@ -117,6 +111,36 @@ namespace RaccoonEcs
 		void removeEntity(EntityManagerType& entityManager, Entity entity) const
 		{
 			entityManager.template removeEntity(entity);
+		}
+	};
+
+	class EntityTransferer
+	{
+	public:
+		template<typename EntityManagerType>
+		void transferEntity(EntityManagerType& source, EntityManagerType& target, Entity entity) const
+		{
+			source.template transferEntityTo(target, entity);
+		}
+	};
+
+	class ScheduledActionsExecutor
+	{
+	public:
+		template<typename EntityManagerType>
+		void executeScheduledActions(EntityManagerType& entityManager) const
+		{
+			entityManager.template executeScheduledActions();
+		}
+	};
+
+	class InnerDataAccessor
+	{
+	public:
+		template<typename AsyncEntityManagerType>
+		auto& getSingleThreadedEntityManager(AsyncEntityManagerType& asyncEntityManager) const
+		{
+			return asyncEntityManager.template mSingleThreadedManagerRef;
 		}
 	};
 } // namespace RaccoonEcs

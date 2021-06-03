@@ -19,7 +19,7 @@ namespace RaccoonEcs
 		virtual void shutdown() {}
 
 		// for debug purposes
-		virtual std::string getName() = 0;
+		virtual std::string getName() const = 0;
 	};
 
 } // namespace RaccoonEcs

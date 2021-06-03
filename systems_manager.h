@@ -73,22 +73,22 @@ namespace RaccoonEcs
 		}
 
 #ifdef PROFILE_SYSTEMS
-	SystemsFrameTime getPreviousFrameTimeData()
-	{
-		return mPreviousFrameTime;
-	}
+		SystemsFrameTime getPreviousFrameTimeData()
+		{
+			return mPreviousFrameTime;
+		}
 #endif // PROFILE_SYSTEMS
 
-	std::vector<std::string> getSystemNames()
-	{
-		std::vector<std::string> result;
-		result.reserve(mSystems.size());
-		for (std::unique_ptr<System>& system : mSystems)
+		std::vector<std::string> getSystemNames()
 		{
-			result.push_back(system->getName());
+			std::vector<std::string> result;
+			result.reserve(mSystems.size());
+			for (std::unique_ptr<System>& system : mSystems)
+			{
+				result.push_back(system->getName());
+			}
+			return result;
 		}
-		return result;
-	}
 
 	private:
 		std::vector<std::unique_ptr<System>> mSystems;
