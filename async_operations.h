@@ -7,20 +7,39 @@
 
 namespace RaccoonEcs
 {
+	// non-virtual
+	class BaseAsyncOperation
+	{
+	public:
+		BaseAsyncOperation() = default;
+		~BaseAsyncOperation() = default;
+		BaseAsyncOperation(BaseAsyncOperation&) = delete;
+		BaseAsyncOperation& operator=(BaseAsyncOperation&) = delete;
+		BaseAsyncOperation(BaseAsyncOperation&&) = default;
+		BaseAsyncOperation& operator=(BaseAsyncOperation&&) = default;
+
+	protected:
+		template<typename AsyncEntityManager>
+		auto& getSync(AsyncEntityManager& asyncEntityManager) const
+		{
+			return asyncEntityManager.template mSingleThreadedManagerRef;
+		}
+	};
+
 	template<typename... Components>
-	class ComponentFilter
+	class ComponentFilter : public BaseAsyncOperation
 	{
 	public:
 		template<typename EntityManagerType, typename... AdditionalData>
 		void getComponents(EntityManagerType& entityManager, std::vector<std::tuple<AdditionalData..., Components*...>>& components, AdditionalData... data) const
 		{
-			entityManager.template getComponents<Components...>(components, data...);
+			this->getSync(entityManager).template getComponents<Components...>(components, data...);
 		}
 
 		template<typename EntityManagerType, typename... AdditionalData>
 		void getComponentsWithEntities(EntityManagerType& entityManager, std::vector<std::tuple<AdditionalData..., Entity, Components*...>>& components, AdditionalData... data) const
 		{
-			entityManager.template getComponentsWithEntities<Components...>(components, data...);
+			this->getSync(entityManager).template getComponentsWithEntities<Components...>(components, data...);
 		}
 
 		template<typename ComponentSetHolderType>
@@ -32,19 +51,19 @@ namespace RaccoonEcs
 		template<typename EntityManagerType, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSet(EntityManagerType& entityManager, FunctionType processor, AdditionalData... data) const
 		{
-			entityManager.template forEachComponentSet<Components...>(processor, data...);
+			this->getSync(entityManager).template forEachComponentSet<Components...>(processor, data...);
 		}
 
 		template<typename EntityManagerType, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSetWithEntity(EntityManagerType& entityManager, FunctionType processor, AdditionalData... data) const
 		{
-			entityManager.template forEachComponentSetWithEntity<Components...>(processor, data...);
+			this->getSync(entityManager).template forEachComponentSetWithEntity<Components...>(processor, data...);
 		}
 
-		template<typename ComponentSetHolderType>
-		std::tuple<Components*...> getEntityComponents(ComponentSetHolderType& componentHolder, Entity entity) const
+		template<typename EntityManagerType>
+		std::tuple<Components*...> getEntityComponents(EntityManagerType& entityManager, Entity entity) const
 		{
-			return componentHolder.template getEntityComponents<Components...>(entity);
+			return this->getSync(entityManager).template getEntityComponents<Components...>(entity);
 		}
 	};
 
@@ -55,13 +74,13 @@ namespace RaccoonEcs
 		template<typename EntityManagerType>
 		Component* addComponent(EntityManagerType& entityManager, Entity entity) const
 		{
-			return entityManager.template addComponent<Component>(entity);
+			return this->getSync(entityManager).template addComponent<Component>(entity);
 		}
 
 		template<typename EntityManagerType>
 		Component* scheduleAddComponent(EntityManagerType& entityManager, Entity entity) const
 		{
-			return entityManager.template scheduleAddComponent<Component>(entity);
+			return this->getSync(entityManager).template scheduleAddComponent<Component>(entity);
 		}
 
 		template<typename ComponentHolderType>
@@ -78,13 +97,13 @@ namespace RaccoonEcs
 	};
 
 	template<typename Component>
-	class ComponentRemover
+	class ComponentRemover : public BaseAsyncOperation
 	{
 	public:
 		template<typename EntityManagerType>
 		void scheduleRemoveComponent(EntityManagerType& entityManager, Entity entity) const
 		{
-			entityManager.template scheduleRemoveComponent<Component>(entity);
+			this->getSync(entityManager).template scheduleRemoveComponent<Component>(entity);
 		}
 
 		template<typename EntityViewType>
@@ -94,53 +113,53 @@ namespace RaccoonEcs
 		}
 	};
 
-	class EntityAdder
+	class EntityAdder : public BaseAsyncOperation
 	{
 	public:
 		template<typename EntityManagerType>
 		Entity addEntity(EntityManagerType& entityManager) const
 		{
-			return entityManager.template addEntity();
+			return this->getSync(entityManager).template addEntity();
 		}
 	};
 
-	class EntityRemover
+	class EntityRemover : public BaseAsyncOperation
 	{
 	public:
 		template<typename EntityManagerType>
 		void removeEntity(EntityManagerType& entityManager, Entity entity) const
 		{
-			entityManager.template removeEntity(entity);
+			this->getSync(entityManager).template removeEntity(entity);
 		}
 	};
 
-	class EntityTransferer
+	class EntityTransferer : public BaseAsyncOperation
 	{
 	public:
 		template<typename EntityManagerType>
 		void transferEntity(EntityManagerType& source, EntityManagerType& target, Entity entity) const
 		{
-			source.template transferEntityTo(target, entity);
+			this->getSync(source).template transferEntityTo(getSync(target), entity);
 		}
 	};
 
-	class ScheduledActionsExecutor
+	class ScheduledActionsExecutor : public BaseAsyncOperation
 	{
 	public:
 		template<typename EntityManagerType>
 		void executeScheduledActions(EntityManagerType& entityManager) const
 		{
-			entityManager.template executeScheduledActions();
+			this->getSync(entityManager).template executeScheduledActions();
 		}
 	};
 
-	class InnerDataAccessor
+	class InnerDataAccessor : public BaseAsyncOperation
 	{
 	public:
 		template<typename AsyncEntityManagerType>
 		auto& getSingleThreadedEntityManager(AsyncEntityManagerType& asyncEntityManager) const
 		{
-			return asyncEntityManager.template mSingleThreadedManagerRef;
+			return this->getSync(asyncEntityManager);
 		}
 	};
 } // namespace RaccoonEcs
