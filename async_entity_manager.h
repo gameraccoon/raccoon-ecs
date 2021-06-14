@@ -23,7 +23,7 @@ namespace RaccoonEcs
 		{}
 
 	private:
-		// can be accessed only throug BaseAsyncOperation class
+		// can be accessed only from BaseAsyncOperation class
 		EntityManager& mSingleThreadedManagerRef;
 	};
 

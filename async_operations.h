@@ -26,10 +26,16 @@ namespace RaccoonEcs
 		}
 	};
 
+	class InnerDataAccessor;
+
 	template<typename... Components>
 	class ComponentFilter : public BaseAsyncOperation
 	{
+		friend class AsyncSystemsManager;
+
 	public:
+		ComponentFilter(const InnerDataAccessor&) {}
+
 		template<typename EntityManagerType, typename... AdditionalData>
 		void getComponents(EntityManagerType& entityManager, std::vector<std::tuple<AdditionalData..., Components*...>>& components, AdditionalData... data) const
 		{
@@ -65,12 +71,19 @@ namespace RaccoonEcs
 		{
 			return this->getSync(entityManager).template getEntityComponents<Components...>(entity);
 		}
+
+	protected:
+		ComponentFilter() = default;
 	};
 
 	template<typename Component>
 	class ComponentAdder : public ComponentFilter<Component>
 	{
+		friend class AsyncSystemsManager;
+
 	public:
+		ComponentAdder(const InnerDataAccessor&) {}
+
 		template<typename EntityManagerType>
 		Component* addComponent(EntityManagerType& entityManager, Entity entity) const
 		{
@@ -94,12 +107,37 @@ namespace RaccoonEcs
 		{
 			return componentHolder.template addComponent<Component>();
 		}
+
+	protected:
+		ComponentAdder() = default;
+	};
+
+	template<typename Component>
+	class EntitySelector : public BaseAsyncOperation
+	{
+		friend class AsyncSystemsManager;
+
+	public:
+		EntitySelector(const InnerDataAccessor&) {}
+
+		template<typename EntityManagerType>
+		bool doesEntityHaveComponent(EntityManagerType& entityManager, Entity entity)
+		{
+			return this->getSync(entityManager).template doesEntityHaveComponent<Component>(entity);
+		}
+
+	protected:
+		EntitySelector() = default;
 	};
 
 	template<typename Component>
 	class ComponentRemover : public BaseAsyncOperation
 	{
+		friend class AsyncSystemsManager;
+
 	public:
+		ComponentRemover(const InnerDataAccessor&) {}
+
 		template<typename EntityManagerType>
 		void scheduleRemoveComponent(EntityManagerType& entityManager, Entity entity) const
 		{
@@ -111,55 +149,95 @@ namespace RaccoonEcs
 		{
 			entityView.template scheduleRemoveComponent<Component>();
 		}
+
+	protected:
+		ComponentRemover() = default;
 	};
 
 	class EntityAdder : public BaseAsyncOperation
 	{
+		friend class AsyncSystemsManager;
+
 	public:
+		EntityAdder(const InnerDataAccessor&) {}
+
 		template<typename EntityManagerType>
 		Entity addEntity(EntityManagerType& entityManager) const
 		{
 			return this->getSync(entityManager).template addEntity();
 		}
+
+	protected:
+		EntityAdder() = default;
 	};
 
 	class EntityRemover : public BaseAsyncOperation
 	{
+		friend class AsyncSystemsManager;
+
 	public:
+		EntityRemover(const InnerDataAccessor&) {}
+
 		template<typename EntityManagerType>
 		void removeEntity(EntityManagerType& entityManager, Entity entity) const
 		{
 			this->getSync(entityManager).template removeEntity(entity);
 		}
+
+	protected:
+		EntityRemover() = default;
 	};
 
 	class EntityTransferer : public BaseAsyncOperation
 	{
+		friend class AsyncSystemsManager;
+
 	public:
+		EntityTransferer(const InnerDataAccessor&) {}
+
 		template<typename EntityManagerType>
 		void transferEntity(EntityManagerType& source, EntityManagerType& target, Entity entity) const
 		{
 			this->getSync(source).template transferEntityTo(getSync(target), entity);
 		}
+
+	protected:
+		EntityTransferer() = default;
 	};
 
 	class ScheduledActionsExecutor : public BaseAsyncOperation
 	{
+		friend class AsyncSystemsManager;
+
 	public:
+		ScheduledActionsExecutor(const InnerDataAccessor&) {}
+
 		template<typename EntityManagerType>
 		void executeScheduledActions(EntityManagerType& entityManager) const
 		{
 			this->getSync(entityManager).template executeScheduledActions();
 		}
+
+	protected:
+		ScheduledActionsExecutor() = default;
 	};
 
 	class InnerDataAccessor : public BaseAsyncOperation
 	{
+		friend class AsyncSystemsManager;
+
 	public:
 		template<typename AsyncEntityManagerType>
 		auto& getSingleThreadedEntityManager(AsyncEntityManagerType& asyncEntityManager) const
 		{
 			return this->getSync(asyncEntityManager);
 		}
+
+#ifdef RACCOON_ECS_TOOLMODE
+	public:
+#else
+	protected:
+#endif // RACCOON_ECS_TOOLMODE
+		InnerDataAccessor() = default;
 	};
 } // namespace RaccoonEcs
