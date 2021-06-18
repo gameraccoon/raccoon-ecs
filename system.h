@@ -17,9 +17,6 @@ namespace RaccoonEcs
 		virtual void update() = 0;
 		virtual void initResources() {}
 		virtual void shutdown() {}
-
-		// for debug purposes
-		virtual std::string getName() const = 0;
 	};
 
 } // namespace RaccoonEcs

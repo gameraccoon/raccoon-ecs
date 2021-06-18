@@ -24,6 +24,7 @@ namespace RaccoonEcs
 		void registerSystem(Args&&... args)
 		{
 			mSystems.emplace_back(new T(std::forward<Args>(args)...));
+			mSystemIds.push_back(T::GetSystemId());
 		}
 
 		void update()
@@ -79,19 +80,14 @@ namespace RaccoonEcs
 		}
 #endif // PROFILE_SYSTEMS
 
-		std::vector<std::string> getSystemNames()
+		const std::vector<std::string>& getSystemNames()
 		{
-			std::vector<std::string> result;
-			result.reserve(mSystems.size());
-			for (std::unique_ptr<System>& system : mSystems)
-			{
-				result.push_back(system->getName());
-			}
-			return result;
+			return mSystemIds;
 		}
 
 	private:
 		std::vector<std::unique_ptr<System>> mSystems;
+		std::vector<std::string> mSystemIds;
 
 #ifdef PROFILE_SYSTEMS
 		SystemsFrameTime mThisFrameTime;

@@ -31,6 +31,7 @@ namespace RaccoonEcs
 	template<typename... Components>
 	class ComponentFilter : public BaseAsyncOperation
 	{
+		template<typename T>
 		friend class AsyncSystemsManager;
 
 	public:
@@ -79,6 +80,7 @@ namespace RaccoonEcs
 	template<typename Component>
 	class ComponentAdder : public ComponentFilter<Component>
 	{
+		template<typename T>
 		friend class AsyncSystemsManager;
 
 	public:
@@ -113,26 +115,9 @@ namespace RaccoonEcs
 	};
 
 	template<typename Component>
-	class EntitySelector : public BaseAsyncOperation
-	{
-		friend class AsyncSystemsManager;
-
-	public:
-		EntitySelector(const InnerDataAccessor&) {}
-
-		template<typename EntityManagerType>
-		bool doesEntityHaveComponent(EntityManagerType& entityManager, Entity entity)
-		{
-			return this->getSync(entityManager).template doesEntityHaveComponent<Component>(entity);
-		}
-
-	protected:
-		EntitySelector() = default;
-	};
-
-	template<typename Component>
 	class ComponentRemover : public BaseAsyncOperation
 	{
+		template<typename T>
 		friend class AsyncSystemsManager;
 
 	public:
@@ -154,8 +139,28 @@ namespace RaccoonEcs
 		ComponentRemover() = default;
 	};
 
+	template<typename Component>
+	class EntitySelector : public BaseAsyncOperation
+	{
+		template<typename T>
+		friend class AsyncSystemsManager;
+
+	public:
+		EntitySelector(const InnerDataAccessor&) {}
+
+		template<typename EntityManagerType>
+		bool doesEntityHaveComponent(EntityManagerType& entityManager, Entity entity)
+		{
+			return this->getSync(entityManager).template doesEntityHaveComponent<Component>(entity);
+		}
+
+	protected:
+		EntitySelector() = default;
+	};
+
 	class EntityAdder : public BaseAsyncOperation
 	{
+		template<typename T>
 		friend class AsyncSystemsManager;
 
 	public:
@@ -173,6 +178,7 @@ namespace RaccoonEcs
 
 	class EntityRemover : public BaseAsyncOperation
 	{
+		template<typename T>
 		friend class AsyncSystemsManager;
 
 	public:
@@ -190,6 +196,7 @@ namespace RaccoonEcs
 
 	class EntityTransferer : public BaseAsyncOperation
 	{
+		template<typename T>
 		friend class AsyncSystemsManager;
 
 	public:
@@ -207,6 +214,7 @@ namespace RaccoonEcs
 
 	class ScheduledActionsExecutor : public BaseAsyncOperation
 	{
+		template<typename T>
 		friend class AsyncSystemsManager;
 
 	public:
@@ -224,6 +232,7 @@ namespace RaccoonEcs
 
 	class InnerDataAccessor : public BaseAsyncOperation
 	{
+		template<typename T>
 		friend class AsyncSystemsManager;
 
 	public:
