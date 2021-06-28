@@ -1,12 +1,12 @@
 #pragma once
 
 #include <chrono>
-#include <memory>
-#include <vector>
-#include <type_traits>
 #include <functional>
-
-#include <iostream>
+#include <memory>
+#include <numeric>
+#include <type_traits>
+#include <unordered_set>
+#include <vector>
 
 #include "async_operations.h"
 #include "error_handling.h"
@@ -22,31 +22,31 @@ namespace RaccoonEcs
 		{}
 
 		template<typename... Systems>
-		SystemDependencies& dependsOn()
+		SystemDependencies&& dependsOn() &&
 		{
 			(systemsBefore.push_back(Systems::GetSystemId()), ...);
-			return *this;
+			return std::move(*this);
 		}
 
 		template<typename... Systems>
-		SystemDependencies& isDependencyFor()
+		SystemDependencies&& isDependencyFor() &&
 		{
 			(systemsAfter.push_back(Systems::GetSystemId()), ...);
-			return *this;
+			return std::move(*this);
 		}
 
 		template<typename... Systems>
-		SystemDependencies& canNotBeRunTogetherWith()
+		SystemDependencies&& canNotBeRunTogetherWith() &&
 		{
 			(incompatibleSystems.push_back(Systems::GetSystemId()), ...);
-			return *this;
+			return std::move(*this);
 		}
 
 		template<typename... Systems>
-		SystemDependencies& limitConcurrentlyRunSystemsTo(int systemsCount)
+		SystemDependencies&& limitConcurrentlyRunSystemsTo(int systemsCount) &&
 		{
 			allowConcurrentSystemsCount = systemsCount;
-			return *this;
+			return std::move(*this);
 		}
 
 		std::vector<std::string> systemsBefore;
@@ -56,25 +56,155 @@ namespace RaccoonEcs
 		int customOrder;
 	};
 
-	class SystemDependencyGraph
+	template<typename V, typename T>
+	void pushUniqueValueToVector(V& inOutVector, T&& value)
 	{
+		if (std::find(inOutVector.begin(), inOutVector.end(), value) != inOutVector.end())
+		{
+			inOutVector.push_back(std::forward<T>(value));
+		}
+	}
+
+	class DependencyGraph
+	{
+		friend class SystemDependencyTracer;
+
 	public:
+		void initNodes(size_t count)
+		{
+			mNodes.resize(count);
+		}
+
+		void addDependency(size_t before, size_t after)
+		{
+			pushUniqueValueToVector(mNodes[before].nodeDependencies, after);
+			pushUniqueValueToVector(mNodes[after].dependentNodes, before);
+		}
+
+		void finalize()
+		{
+			for (size_t nodeIdx = 0; nodeIdx < mNodes.size(); ++nodeIdx)
+			{
+				Node& node = mNodes[nodeIdx];
+				// calculate distanceToTheLast
+				if (node.nodeDependencies.empty())
+				{
+					std::vector<size_t> nextNodes;
+					node.distanceToTheLast = 1;
+					nextNodes.push_back(nodeIdx);
+
+					while (!nextNodes.empty())
+					{
+						Node& currentNode = mNodes[nextNodes.back()];
+						nextNodes.pop_back();
+
+						for (size_t dependentNodeIdx : currentNode.dependentNodes)
+						{
+							Node& dependentNode = mNodes[dependentNodeIdx];
+							dependentNode.distanceToTheLast = std::min(currentNode.distanceToTheLast + 1, dependentNode.distanceToTheLast);
+							nextNodes.push_back(dependentNodeIdx);
+						}
+					}
+				}
+
+				// populate mFirstNodes
+				if (mNodes[nodeIdx].nodeDependencies.empty())
+				{
+					mFirstNodes.push_back(nodeIdx);
+				}
+			}
+		}
+
 	private:
 		struct Node
 		{
-			int id;
-			SystemDependencies explicitDependencies;
-			std::shared_ptr<struct SynchronizationPoint> nextSyncPoint;
+			std::vector<size_t> nodeDependencies;
+			// to faster trace the graph
+			std::vector<size_t> dependentNodes;
+			// how many other systems depend on it (including inderect dependencies)
+			size_t distanceToTheLast = std::numeric_limits<size_t>::max();
 		};
 
-		struct SynchronizationPoint
+		std::vector<Node> mNodes;
+		std::vector<size_t> mFirstNodes;
+	};
+
+	class SystemDependencyTracer
+	{
+	public:
+		SystemDependencyTracer(const DependencyGraph& dependencyGraph)
+			: mDependencyGraph(dependencyGraph)
+			, mResolvedDependencies(mDependencyGraph.mNodes.size(), false)
+			, mNextSystems(mDependencyGraph.mFirstNodes)
 		{
-			std::vector<int> previousNodes;
-			std::vector<std::shared_ptr<Node>> nextNodes;
-		};
+		}
+
+		std::vector<size_t> finishSystemAndGetNextSystemsToRun(size_t finishedSystem)
+		{
+			mActiveSystems.erase(
+				std::remove(
+					mActiveSystems.begin(),
+					mActiveSystems.end(),
+					finishedSystem),
+				mActiveSystems.end());
+
+			mResolvedDependencies[finishedSystem] = true;
+
+			const DependencyGraph::Node& systemNode = mDependencyGraph.mNodes[finishedSystem];
+			for (size_t dependentNode : systemNode.dependentNodes)
+			{
+				pushUniqueValueToVector(mNextSystems, dependentNode);
+			}
+
+			std::vector<size_t> systemsToRun;
+
+			if (!mNextSystems.empty())
+			{
+				for (size_t nextSystem : mNextSystems)
+				{
+					if (canRunSystem(nextSystem))
+					{
+						systemsToRun.push_back(nextSystem);
+					}
+				}
+			}
+
+			return systemsToRun;
+		}
+
+		void runSystem(size_t systemIdx)
+		{
+			mNextSystems.erase(
+				std::remove(
+					mNextSystems.begin(),
+					mNextSystems.end(),
+					systemIdx),
+				mNextSystems.end()
+			);
+
+			mActiveSystems.push_back(systemIdx);
+		}
+
+		bool canRunSystem(size_t systemIdx)
+		{
+			const std::vector<size_t>& dependencies = mDependencyGraph.mNodes[systemIdx].nodeDependencies;
+
+			for (size_t depedency : dependencies)
+			{
+				if (mResolvedDependencies[depedency] == false)
+				{
+					return false;
+				}
+			}
+
+			return true;
+		}
 
 	private:
-		std::shared_ptr<SynchronizationPoint> mStartPoint;
+		const DependencyGraph& mDependencyGraph;
+		std::vector<bool> mResolvedDependencies;
+		std::vector<size_t> mActiveSystems;
+		std::vector<size_t> mNextSystems;
 	};
 
 	/**
@@ -86,13 +216,13 @@ namespace RaccoonEcs
 	public:
 		template <typename SystemType, typename... ComponentOperations, typename... Args>
 		void registerSystem(
-			[[maybe_unused]] SystemDependencies dependencies = SystemDependencies(),
+			SystemDependencies&& dependencies,
 			Args&&... args)
 		{
-			auto result = mSystemIdxByName.emplace(SystemType::GetSystemId(), mSystems.size());
+			auto result = mSystemIdxById.emplace(SystemType::GetSystemId(), mSystems.size());
 			RACCOON_ECS_ASSERT(result.second, std::string("System registred twice: ") + SystemType::GetSystemId());
 
-			mSystemDependenciesData.emplace_back();
+			mSystemDependenciesData.emplace_back(SystemType::GetSystemId(), std::move(dependencies));
 
 			(registerComponentDependencies<SystemType, ComponentOperations>(mSystemDependenciesData.back()), ...);
 
@@ -102,7 +232,14 @@ namespace RaccoonEcs
 
 		void update()
 		{
-			for (std::unique_ptr<System>& system : mSystems)
+			SystemDependencyTracer dependencies(mDependenctyGraph);
+
+			//while (true)
+			{
+				//dependencies.finishSystemAndGetNextSystemsToRun();
+			}
+
+			for (auto& system : mSystems)
 			{
 				// real work is being done here
 				system->update();
@@ -134,7 +271,7 @@ namespace RaccoonEcs
 		 */
 		void init(const std::function<void(const InnerDataAccessor&)> initFunc = nullptr)
 		{
-			buildSystemsGraph();
+			buildDependencyGraph();
 
 			if (initFunc)
 			{
@@ -146,6 +283,12 @@ namespace RaccoonEcs
 	private:
 		struct SystemDependencyInnerData
 		{
+			SystemDependencyInnerData(const std::string& systemId, SystemDependencies&& explicitDependencies)
+				: systemId(systemId)
+				, explicitDependencies(std::move(explicitDependencies))
+			{}
+
+			std::string systemId;
 			SystemDependencies explicitDependencies;
 			std::vector<ComponentTypeId> componentsToRead;
 			std::vector<ComponentTypeId> componentsToWrite;
@@ -281,42 +424,18 @@ namespace RaccoonEcs
 			}
 		}
 
-		class DependencyGraph
+		void buildDependencyGraph()
 		{
-		public:
-			void addNode(const std::string& id)
+			mDependenctyGraph.initNodes(mSystems.size());
+
+			for (size_t systemIdx = 0; systemIdx < mSystems.size(); ++systemIdx)
 			{
-				mIdToNode.emplace(id, mNodes.size());
-				mNodes.emplace_back(id);
-			}
-
-			void addDependency(const std::string& before, const std::string& after)
-			{
-				size_t idBefore = mIdToNode.at(before);
-				size_t idAfter = mIdToNode.at(after);
-
-				mNodes[idBefore].nodeDependencies.push_back(idAfter);
-			}
-
-		private:
-			struct Node
-			{
-				Node(const std::string& name) : systemName(name) {}
-
-				std::string systemName;
-				std::vector<size_t> nodeDependencies;
-			};
-
-			std::unordered_map<std::string, size_t> mIdToNode;
-			std::vector<Node> mNodes;
-		};
-
-		void buildSystemsGraph()
-		{
-			DependencyGraph graph;
-			for (const std::string& systemId : mSystemIds)
-			{
-				graph.addNode(systemId);
+				const SystemDependencyInnerData& dependencyData = mSystemDependenciesData[systemIdx];
+				for (const std::string& systemBefore : dependencyData.explicitDependencies.systemsBefore)
+				{
+					size_t systemBeforeIdx = mSystemIdxById.at(systemBefore);
+					mDependenctyGraph.addDependency(systemBeforeIdx, systemIdx);
+				}
 			}
 		}
 
@@ -324,7 +443,8 @@ namespace RaccoonEcs
 		std::vector<std::unique_ptr<System>> mSystems;
 		std::vector<std::string> mSystemIds;
 		std::vector<SystemDependencyInnerData> mSystemDependenciesData;
-		std::unordered_map<std::string, size_t> mSystemIdxByName;
+		std::unordered_map<std::string, size_t> mSystemIdxById;
+		DependencyGraph mDependenctyGraph;
 	};
 
 } // namespace RaccoonEcs
