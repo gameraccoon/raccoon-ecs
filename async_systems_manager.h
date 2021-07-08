@@ -75,10 +75,22 @@ namespace RaccoonEcs
 			mNodes.resize(count);
 		}
 
-		void addDependency(size_t before, size_t after)
+		void addDependency(size_t beforeIdx, size_t afterIdx)
 		{
-			pushUniqueValueToVector(mNodes[before].nodeDependencies, after);
-			pushUniqueValueToVector(mNodes[after].dependentNodes, before);
+			pushUniqueValueToVector(mNodes[beforeIdx].nodeDependencies, afterIdx);
+			pushUniqueValueToVector(mNodes[afterIdx].dependentNodes, beforeIdx);
+		}
+
+		void addIncompatibility(size_t firstSystemIdx, size_t secondSystemIdx)
+		{
+			if (firstSystemIdx < secondSystemIdx)
+			{
+				mIncompatibilities.insert(std::make_pair(firstSystemIdx, secondSystemIdx));
+			}
+			else
+			{
+				mIncompatibilities.insert(std::make_pair(secondSystemIdx, firstSystemIdx));
+			}
 		}
 
 		void finalize()
@@ -115,6 +127,18 @@ namespace RaccoonEcs
 			}
 		}
 
+		bool areSystemsCompatible(size_t firstSystemIdx, size_t secondSystemIdx) const
+		{
+			if (firstSystemIdx < secondSystemIdx)
+			{
+				return mIncompatibilities.find(std::make_pair(firstSystemIdx, secondSystemIdx)) == mIncompatibilities.end();
+			}
+			else
+			{
+				return mIncompatibilities.find(std::make_pair(secondSystemIdx, firstSystemIdx)) == mIncompatibilities.end();
+			}
+		}
+
 	private:
 		struct Node
 		{
@@ -125,8 +149,17 @@ namespace RaccoonEcs
 			size_t distanceToTheLast = std::numeric_limits<size_t>::max();
 		};
 
+		struct IndexPairHash
+		{
+			std::size_t operator() (std::pair<size_t, size_t> const &pair) const
+			{
+				return pair.first ^ std::rotl(pair.second, 7);
+			}
+		};
+
 		std::vector<Node> mNodes;
 		std::vector<size_t> mFirstNodes;
+		std::unordered_set<std::pair<size_t, size_t>, IndexPairHash> mIncompatibilities;
 	};
 
 	class SystemDependencyTracer
@@ -139,7 +172,7 @@ namespace RaccoonEcs
 		{
 		}
 
-		std::vector<size_t> finishSystemAndGetNextSystemsToRun(size_t finishedSystem)
+		void finishSystem(size_t finishedSystem)
 		{
 			mActiveSystems.erase(
 				std::remove(
@@ -155,11 +188,15 @@ namespace RaccoonEcs
 			{
 				pushUniqueValueToVector(mNextSystems, dependentNode);
 			}
+		}
 
+		std::vector<size_t> getNextSystemsToRun() const
+		{
 			std::vector<size_t> systemsToRun;
 
 			if (!mNextSystems.empty())
 			{
+				// O(n*m)
 				for (size_t nextSystem : mNextSystems)
 				{
 					if (canRunSystem(nextSystem))
@@ -168,6 +205,8 @@ namespace RaccoonEcs
 					}
 				}
 			}
+
+			filterIncompatibleSystems(systemsToRun);
 
 			return systemsToRun;
 		}
@@ -185,7 +224,7 @@ namespace RaccoonEcs
 			mActiveSystems.push_back(systemIdx);
 		}
 
-		bool canRunSystem(size_t systemIdx)
+		bool canRunSystem(size_t systemIdx) const
 		{
 			const std::vector<size_t>& dependencies = mDependencyGraph.mNodes[systemIdx].nodeDependencies;
 
@@ -197,7 +236,51 @@ namespace RaccoonEcs
 				}
 			}
 
+			for (size_t activeSystem : mActiveSystems)
+			{
+				if (!mDependencyGraph.areSystemsCompatible(systemIdx, activeSystem))
+				{
+					return false;
+				}
+			}
+
 			return true;
+		}
+
+		void filterIncompatibleSystems(std::vector<size_t>& systems) const
+		{
+			std::vector<size_t> systemsToExclude;
+
+			// O(n^2)
+			for (size_t i = 0; i + 1 < systems.size(); ++i)
+			{
+				for (size_t j = i + 1; j < systems.size(); ++j)
+				{
+					if (!mDependencyGraph.areSystemsCompatible(systems[i], systems[j]))
+					{
+						// we prefer to keep systems that are more distant from the last
+						if (mDependencyGraph.mNodes[systems[i]].distanceToTheLast
+							<
+							mDependencyGraph.mNodes[systems[j]].distanceToTheLast)
+						{
+							systemsToExclude.push_back(i);
+						}
+						else
+						{
+							systemsToExclude.push_back(j);
+						}
+					}
+				}
+			}
+
+			// O(n log n)
+			std::sort(systemsToExclude.begin(), systemsToExclude.end(), std::greater());
+			systemsToExclude.erase(std::unique(systemsToExclude.begin(), systemsToExclude.end()), systemsToExclude.end());
+			for (size_t idx : systemsToExclude)
+			{
+				std::swap(systems[idx], systems.back());
+			}
+			systems.resize(systems.size() - systemsToExclude.size());
 		}
 
 	private:
@@ -234,15 +317,17 @@ namespace RaccoonEcs
 		{
 			SystemDependencyTracer dependencies(mDependenctyGraph);
 
-			//while (true)
+			while (true)
 			{
-				//dependencies.finishSystemAndGetNextSystemsToRun();
-			}
+				std::vector<size_t> systemsToRun = dependencies.getNextSystemsToRun();
+				if (systemsToRun.empty())
+				{
+					break;
+				}
 
-			for (auto& system : mSystems)
-			{
-				// real work is being done here
-				system->update();
+				dependencies.runSystem(systemsToRun[0]);
+				mSystems[systemsToRun[0]]->update();
+				dependencies.finishSystem(systemsToRun[0]);
 			}
 		}
 
@@ -437,6 +522,58 @@ namespace RaccoonEcs
 					mDependenctyGraph.addDependency(systemBeforeIdx, systemIdx);
 				}
 			}
+
+			for (size_t i = 0; i + 1 < mSystems.size(); ++i)
+			{
+				for (size_t j = i + 1; j < mSystems.size(); ++j)
+				{
+					if (!areSystemsCompatible(i, j))
+					{
+						mDependenctyGraph.addIncompatibility(i, j);
+					}
+				}
+			}
+
+			mDependenctyGraph.finalize();
+		}
+
+		bool areSystemsCompatible(size_t firstSystemIdx, size_t secondSystemIdx)
+		{
+			const SystemDependencyInnerData& firstSystemDependencies = mSystemDependenciesData[firstSystemIdx];
+			const SystemDependencyInnerData& secondSystemDependencies = mSystemDependenciesData[secondSystemIdx];
+
+			// sych systems will be run exclusively anyway, so no need to add incompatibility specifically
+			if (firstSystemDependencies.exclusiveGlobalAccess || secondSystemDependencies.exclusiveGlobalAccess)
+			{
+				return true;
+			}
+
+			auto doesContain = [](const std::vector<ComponentTypeId>& vector, ComponentTypeId value) -> bool {
+				return (std::find(vector.begin(), vector.end(), value) != vector.end());
+			};
+
+			for (ComponentTypeId writeComponent : firstSystemDependencies.componentsToWrite)
+			{
+				if (doesContain(firstSystemDependencies.componentsToRead, writeComponent))
+				{
+					return false;
+				}
+
+				if (doesContain(firstSystemDependencies.componentsToWrite, writeComponent))
+				{
+					return false;
+				}
+			}
+
+			for (ComponentTypeId readComponent : firstSystemDependencies.componentsToRead)
+			{
+				if (doesContain(firstSystemDependencies.componentsToWrite, readComponent))
+				{
+					return false;
+				}
+			}
+
+			return true;
 		}
 
 	private:
