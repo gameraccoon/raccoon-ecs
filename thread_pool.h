@@ -43,51 +43,58 @@ namespace RaccoonEcs
 			}
 		}
 
+		/**
+		 * Can be called during a finalizeFn of another task
+		 */
 		template<typename TaskFnT, typename FinalizeFnT>
-		void submitTask(TaskFnT&& taskFn, FinalizeFnT&& finalizeFn = nullptr)
+		void executeTask(TaskFnT&& taskFn, FinalizeFnT&& finalizeFn)
 		{
-			mPreparedTasks.emplace_back(std::forward<TaskFnT>(taskFn), std::forward<FinalizeFnT>(finalizeFn));
+			RACCOON_ECS_ASSERT(!mThreads.empty(), "No threads to execute the task");
+
+			std::lock_guard<std::mutex> l(mDataMutex);
+			mTasksQueue.emplace_back(std::forward<TaskFnT>(taskFn), std::forward<FinalizeFnT>(finalizeFn));
+			++mTasksLeftCount;
+			mWakeUpWorkingThread.notify_one();
 		}
 
-		void executeAll()
+		/**
+		 * This method should never be called from finalizers
+		 */
+		void finalizeTasks()
 		{
-			int tasksLeftCount = mPreparedTasks.size();
+			std::vector<FinalizeFn> finalizersToExecute;
 
+			std::unique_lock<std::mutex> lock(mDataMutex);
+
+			while(mTasksLeftCount > 0)
 			{
-				std::unique_lock<std::mutex> l(mDataMutex);
-				for (Task& preparedTask : mPreparedTasks)
+				mWakeUpMainThread.wait(lock, [this]{ return !mFinalizators.empty() || mTasksLeftCount == 0; });
+
+				if (mTasksLeftCount <= 0)
 				{
-					mTasksQueue.push_back(std::move(preparedTask));
-				}
-			}
-			mPreparedTasks.clear();
-
-			mWakeUpWorkingThread.notify_all();
-
-			while(tasksLeftCount > 0)
-			{
-				std::vector<FinalizeFn> finalizersToExecute;
-
-				{
-					std::unique_lock<std::mutex> l(mDataMutex);
-
-					mFinalizatorAdded.wait(l, [this]{ return !mFinalizators.empty(); });
-
-					while (!mFinalizators.empty())
-					{
-						finalizersToExecute.push_back(std::move(mFinalizators.front()));
-						mFinalizators.pop_front();
-					}
+					RACCOON_ECS_ASSERT(mTasksLeftCount == 0, "mTasksLeftCount should never be negative");
+					break;
 				}
 
+				while (!mFinalizators.empty())
+				{
+					finalizersToExecute.push_back(std::move(mFinalizators.front()));
+					mFinalizators.pop_front();
+					--mTasksLeftCount;
+				}
+
+				// finalizers can be executed without having the mutex locked
+				lock.unlock();
 				for (FinalizeFn& finalizer : finalizersToExecute)
 				{
 					if (finalizer)
 					{
 						finalizer();
 					}
-					--tasksLeftCount;
 				}
+				finalizersToExecute.clear();
+				// need to lock it here to protect mTasksLeftCount in the loop check
+				lock.lock();
 			}
 		}
 
@@ -116,10 +123,10 @@ namespace RaccoonEcs
 			while(true)
 			{
 				{
-					std::unique_lock<std::mutex> l(mDataMutex);
+					std::unique_lock<std::mutex> lock(mDataMutex);
 
 					// wait for a new task or for the shutdown
-					mWakeUpWorkingThread.wait(l, [this]{ return !mTasksQueue.empty() || mReadyToShutdown; });
+					mWakeUpWorkingThread.wait(lock, [this]{ return !mTasksQueue.empty() || mReadyToShutdown; });
 
 					if (mReadyToShutdown)
 					{
@@ -134,20 +141,31 @@ namespace RaccoonEcs
 
 				{
 					std::lock_guard<std::mutex> l(mDataMutex);
-					mFinalizators.push_back(std::move(currentTask.finalizeFn));
+					if (currentTask.finalizeFn)
+					{
+						mFinalizators.push_back(std::move(currentTask.finalizeFn));
+						mWakeUpMainThread.notify_all();
+					}
+					else
+					{
+						--mTasksLeftCount;
+						if (mTasksLeftCount <= 0)
+						{
+							RACCOON_ECS_ASSERT(mTasksLeftCount == 0, "mTasksLeftCount should never be negative");
+							mWakeUpMainThread.notify_all();
+						}
+					}
 				}
-
-				mFinalizatorAdded.notify_all();
 			}
 		}
 
 	private:
 		std::condition_variable mWakeUpWorkingThread;
-		std::condition_variable mFinalizatorAdded;
+		std::condition_variable mWakeUpMainThread;
 		std::mutex mDataMutex;
 		bool mReadyToShutdown = false;
 		std::vector<std::thread> mThreads;
-		std::vector<Task> mPreparedTasks;
+		int mTasksLeftCount = 0;
 		std::list<Task> mTasksQueue;
 		std::list<FinalizeFn> mFinalizators;
 	};
