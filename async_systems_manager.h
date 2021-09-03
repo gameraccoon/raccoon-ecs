@@ -10,6 +10,7 @@
 
 #include "async_operations.h"
 #include "error_handling.h"
+#include "thread_pool.h"
 
 #include "system.h"
 
@@ -166,9 +167,9 @@ namespace RaccoonEcs
 	{
 	public:
 		SystemDependencyTracer(const DependencyGraph& dependencyGraph)
-			: mDependencyGraph(dependencyGraph)
-			, mResolvedDependencies(mDependencyGraph.mNodes.size(), false)
-			, mNextSystems(mDependencyGraph.mFirstNodes)
+			: mDependencyGraph(&dependencyGraph)
+			, mResolvedDependencies(mDependencyGraph->mNodes.size(), false)
+			, mNextSystems(mDependencyGraph->mFirstNodes)
 		{
 		}
 
@@ -183,7 +184,7 @@ namespace RaccoonEcs
 
 			mResolvedDependencies[finishedSystem] = true;
 
-			const DependencyGraph::Node& systemNode = mDependencyGraph.mNodes[finishedSystem];
+			const DependencyGraph::Node& systemNode = mDependencyGraph->mNodes[finishedSystem];
 			for (size_t dependentNode : systemNode.dependentNodes)
 			{
 				pushUniqueValueToVector(mNextSystems, dependentNode);
@@ -226,7 +227,7 @@ namespace RaccoonEcs
 
 		bool canRunSystem(size_t systemIdx) const
 		{
-			const std::vector<size_t>& dependencies = mDependencyGraph.mNodes[systemIdx].nodeDependencies;
+			const std::vector<size_t>& dependencies = mDependencyGraph->mNodes[systemIdx].nodeDependencies;
 
 			for (size_t depedency : dependencies)
 			{
@@ -238,7 +239,7 @@ namespace RaccoonEcs
 
 			for (size_t activeSystem : mActiveSystems)
 			{
-				if (!mDependencyGraph.areSystemsCompatible(systemIdx, activeSystem))
+				if (!mDependencyGraph->areSystemsCompatible(systemIdx, activeSystem))
 				{
 					return false;
 				}
@@ -256,12 +257,12 @@ namespace RaccoonEcs
 			{
 				for (size_t j = i + 1; j < systems.size(); ++j)
 				{
-					if (!mDependencyGraph.areSystemsCompatible(systems[i], systems[j]))
+					if (!mDependencyGraph->areSystemsCompatible(systems[i], systems[j]))
 					{
 						// we prefer to keep systems that are more distant from the last
-						if (mDependencyGraph.mNodes[systems[i]].distanceToTheLast
+						if (mDependencyGraph->mNodes[systems[i]].distanceToTheLast
 							<
-							mDependencyGraph.mNodes[systems[j]].distanceToTheLast)
+							mDependencyGraph->mNodes[systems[j]].distanceToTheLast)
 						{
 							systemsToExclude.push_back(i);
 						}
@@ -284,7 +285,7 @@ namespace RaccoonEcs
 		}
 
 	private:
-		const DependencyGraph& mDependencyGraph;
+		const DependencyGraph* mDependencyGraph;
 		std::vector<bool> mResolvedDependencies;
 		std::vector<size_t> mActiveSystems;
 		std::vector<size_t> mNextSystems;
@@ -315,20 +316,12 @@ namespace RaccoonEcs
 
 		void update()
 		{
-			SystemDependencyTracer dependencies(mDependenctyGraph);
+			mCurrentFrameDependencies = std::make_unique<SystemDependencyTracer>(mDependenctyGraph);
 
-			while (true)
-			{
-				std::vector<size_t> systemsToRun = dependencies.getNextSystemsToRun();
-				if (systemsToRun.empty())
-				{
-					break;
-				}
+			trySpawnNewSystemTasks();
 
-				dependencies.runSystem(systemsToRun[0]);
-				mSystems[systemsToRun[0]]->update();
-				dependencies.finishSystem(systemsToRun[0]);
-			}
+			// this will block the thread and spawn new tasks as needed
+			mThreadPool.finalizeTasks();
 		}
 
 		void initResources()
@@ -354,7 +347,7 @@ namespace RaccoonEcs
 		 *
 		 * Call it once after registering all your systems and before calling update for the first time
 		 */
-		void init(const std::function<void(const InnerDataAccessor&)> initFunc = nullptr)
+		void init(size_t threadsCount, const std::function<void(const InnerDataAccessor&)> initFunc = nullptr)
 		{
 			buildDependencyGraph();
 
@@ -363,6 +356,8 @@ namespace RaccoonEcs
 				const InnerDataAccessor dataAccessor;
 				initFunc(dataAccessor);
 			}
+
+			mThreadPool.spawnThreads(threadsCount);
 		}
 
 	private:
@@ -576,12 +571,31 @@ namespace RaccoonEcs
 			return true;
 		}
 
+		void trySpawnNewSystemTasks()
+		{
+			std::vector<size_t> systemsToRun = mCurrentFrameDependencies->getNextSystemsToRun();
+
+			for (size_t systemIdx : systemsToRun)
+			{
+				mCurrentFrameDependencies->runSystem(systemIdx);
+				mThreadPool.executeTask([system = mSystems[systemIdx].get()]{
+					system->update();
+				}, [this, systemIdx]{
+					mCurrentFrameDependencies->finishSystem(systemIdx);
+					trySpawnNewSystemTasks();
+				});
+				break;
+			}
+		}
+
 	private:
 		std::vector<std::unique_ptr<System>> mSystems;
 		std::vector<std::string> mSystemIds;
 		std::vector<SystemDependencyInnerData> mSystemDependenciesData;
 		std::unordered_map<std::string, size_t> mSystemIdxById;
 		DependencyGraph mDependenctyGraph;
+		ThreadPool mThreadPool;
+		std::unique_ptr<SystemDependencyTracer> mCurrentFrameDependencies;
 	};
 
 } // namespace RaccoonEcs
