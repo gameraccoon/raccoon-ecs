@@ -1,5 +1,6 @@
 #pragma once
 
+#include <any>
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -62,13 +63,13 @@ namespace RaccoonEcs
 		 */
 		void finalizeTasks()
 		{
-			std::vector<FinalizeFn> finalizersToExecute;
+			std::vector<Finalizer> finalizersToExecute;
 
 			std::unique_lock<std::mutex> lock(mDataMutex);
 
 			while(mTasksLeftCount > 0)
 			{
-				mWakeUpMainThread.wait(lock, [this]{ return !mFinalizators.empty() || mTasksLeftCount == 0; });
+				mWakeUpMainThread.wait(lock, [this]{ return !mFinalizers.empty() || mTasksLeftCount == 0; });
 
 				if (mTasksLeftCount <= 0)
 				{
@@ -76,20 +77,20 @@ namespace RaccoonEcs
 					break;
 				}
 
-				while (!mFinalizators.empty())
+				while (!mFinalizers.empty())
 				{
-					finalizersToExecute.push_back(std::move(mFinalizators.front()));
-					mFinalizators.pop_front();
+					finalizersToExecute.push_back(std::move(mFinalizers.front()));
+					mFinalizers.pop_front();
 					--mTasksLeftCount;
 				}
 
 				// finalizers can be executed without having the mutex locked
 				lock.unlock();
-				for (FinalizeFn& finalizer : finalizersToExecute)
+				for (Finalizer& finalizer : finalizersToExecute)
 				{
-					if (finalizer)
+					if (finalizer.fn)
 					{
-						finalizer();
+						finalizer.fn(std::move(finalizer.result));
 					}
 				}
 				finalizersToExecute.clear();
@@ -99,8 +100,14 @@ namespace RaccoonEcs
 		}
 
 	private:
-		using TaskFn = std::function<void()>;
-		using FinalizeFn = std::function<void()>;
+		using TaskFn = std::function<std::any()>;
+		using FinalizeFn = std::function<void(std::any&&)>;
+
+		struct Finalizer
+		{
+			FinalizeFn fn;
+			std::any result;
+		};
 
 		struct Task
 		{
@@ -137,13 +144,13 @@ namespace RaccoonEcs
 					mTasksQueue.pop_front();
 				}
 
-				currentTask.taskFn();
+				std::any result = currentTask.taskFn();
 
 				{
 					std::lock_guard<std::mutex> l(mDataMutex);
 					if (currentTask.finalizeFn)
 					{
-						mFinalizators.push_back(std::move(currentTask.finalizeFn));
+						mFinalizers.emplace_back(std::move(currentTask.finalizeFn), std::move(result));
 						mWakeUpMainThread.notify_all();
 					}
 					else
@@ -167,6 +174,6 @@ namespace RaccoonEcs
 		std::vector<std::thread> mThreads;
 		int mTasksLeftCount = 0;
 		std::list<Task> mTasksQueue;
-		std::list<FinalizeFn> mFinalizators;
+		std::list<Finalizer> mFinalizers;
 	};
 } // namespace RaccoonEcs

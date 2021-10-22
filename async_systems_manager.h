@@ -23,14 +23,14 @@ namespace RaccoonEcs
 		{}
 
 		template<typename... Systems>
-		SystemDependencies&& dependsOn() &&
+		SystemDependencies&& goesAfter() &&
 		{
 			(systemsBefore.push_back(Systems::GetSystemId()), ...);
 			return std::move(*this);
 		}
 
 		template<typename... Systems>
-		SystemDependencies&& isDependencyFor() &&
+		SystemDependencies&& goesBefore() &&
 		{
 			(systemsAfter.push_back(Systems::GetSystemId()), ...);
 			return std::move(*this);
@@ -58,9 +58,9 @@ namespace RaccoonEcs
 	};
 
 	template<typename V, typename T>
-	void pushUniqueValueToVector(V& inOutVector, T&& value)
+	void pushBackUnique(V& inOutVector, T&& value)
 	{
-		if (std::find(inOutVector.begin(), inOutVector.end(), value) != inOutVector.end())
+		if (std::find(inOutVector.begin(), inOutVector.end(), value) == inOutVector.end())
 		{
 			inOutVector.push_back(std::forward<T>(value));
 		}
@@ -78,8 +78,8 @@ namespace RaccoonEcs
 
 		void addDependency(size_t beforeIdx, size_t afterIdx)
 		{
-			pushUniqueValueToVector(mNodes[beforeIdx].nodeDependencies, afterIdx);
-			pushUniqueValueToVector(mNodes[afterIdx].dependentNodes, beforeIdx);
+			pushBackUnique(mNodes[afterIdx].nodesBefore, beforeIdx);
+			pushBackUnique(mNodes[beforeIdx].nodesAfter, afterIdx);
 		}
 
 		void addIncompatibility(size_t firstSystemIdx, size_t secondSystemIdx)
@@ -100,7 +100,7 @@ namespace RaccoonEcs
 			{
 				Node& node = mNodes[nodeIdx];
 				// calculate distanceToTheLast
-				if (node.nodeDependencies.empty())
+				if (node.nodesAfter.empty())
 				{
 					std::vector<size_t> nextNodes;
 					node.distanceToTheLast = 1;
@@ -111,17 +111,17 @@ namespace RaccoonEcs
 						Node& currentNode = mNodes[nextNodes.back()];
 						nextNodes.pop_back();
 
-						for (size_t dependentNodeIdx : currentNode.dependentNodes)
+						for (size_t nodeBeforeIdx : currentNode.nodesBefore)
 						{
-							Node& dependentNode = mNodes[dependentNodeIdx];
-							dependentNode.distanceToTheLast = std::min(currentNode.distanceToTheLast + 1, dependentNode.distanceToTheLast);
-							nextNodes.push_back(dependentNodeIdx);
+							Node& nodeBefore = mNodes[nodeBeforeIdx];
+							nodeBefore.distanceToTheLast = std::min(currentNode.distanceToTheLast + 1, nodeBefore.distanceToTheLast);
+							nextNodes.push_back(nodeBeforeIdx);
 						}
 					}
 				}
 
 				// populate mFirstNodes
-				if (mNodes[nodeIdx].nodeDependencies.empty())
+				if (mNodes[nodeIdx].nodesBefore.empty())
 				{
 					mFirstNodes.push_back(nodeIdx);
 				}
@@ -143,9 +143,9 @@ namespace RaccoonEcs
 	private:
 		struct Node
 		{
-			std::vector<size_t> nodeDependencies;
+			std::vector<size_t> nodesBefore;
 			// to faster trace the graph
-			std::vector<size_t> dependentNodes;
+			std::vector<size_t> nodesAfter;
 			// how many other systems depend on it (including inderect dependencies)
 			size_t distanceToTheLast = std::numeric_limits<size_t>::max();
 		};
@@ -185,9 +185,9 @@ namespace RaccoonEcs
 			mResolvedDependencies[finishedSystem] = true;
 
 			const DependencyGraph::Node& systemNode = mDependencyGraph->mNodes[finishedSystem];
-			for (size_t dependentNode : systemNode.dependentNodes)
+			for (size_t nodeAfter : systemNode.nodesAfter)
 			{
-				pushUniqueValueToVector(mNextSystems, dependentNode);
+				pushBackUnique(mNextSystems, nodeAfter);
 			}
 		}
 
@@ -227,11 +227,11 @@ namespace RaccoonEcs
 
 		bool canRunSystem(size_t systemIdx) const
 		{
-			const std::vector<size_t>& dependencies = mDependencyGraph->mNodes[systemIdx].nodeDependencies;
+			const std::vector<size_t>& nodesBefore = mDependencyGraph->mNodes[systemIdx].nodesBefore;
 
-			for (size_t depedency : dependencies)
+			for (size_t nodeBeforeIdx : nodesBefore)
 			{
-				if (mResolvedDependencies[depedency] == false)
+				if (mResolvedDependencies[nodeBeforeIdx] == false)
 				{
 					return false;
 				}
@@ -291,6 +291,19 @@ namespace RaccoonEcs
 		std::vector<size_t> mNextSystems;
 	};
 
+	struct AsyncSystemsFrameTime
+	{
+		struct OneSystemTime
+		{
+			size_t systemIdx;
+			std::chrono::time_point<std::chrono::system_clock> start;
+			std::chrono::time_point<std::chrono::system_clock> end;
+		};
+
+		std::chrono::microseconds frameTime;
+		std::vector<OneSystemTime> systemsTime;
+	};
+
 	/**
 	 * Manager for async game systems
 	 */
@@ -316,12 +329,23 @@ namespace RaccoonEcs
 
 		void update()
 		{
-			mCurrentFrameDependencies = std::make_unique<SystemDependencyTracer>(mDependenctyGraph);
+#ifdef RACCOON_ECS_PROFILE_SYSTEMS
+			std::chrono::time_point<std::chrono::system_clock> frameStart = std::chrono::system_clock::now();
+			mThisFrameTime.systemsTime.clear();
+#endif // RACCOON_ECS_PROFILE_SYSTEMS
+
+			mCurrentFrameDependencies = std::make_unique<SystemDependencyTracer>(mDependencyGraph);
 
 			trySpawnNewSystemTasks();
 
 			// this will block the thread and spawn new tasks as needed
 			mThreadPool.finalizeTasks();
+
+#ifdef RACCOON_ECS_PROFILE_SYSTEMS
+				std::chrono::time_point<std::chrono::system_clock> frameEnd = std::chrono::system_clock::now();
+				mThisFrameTime.frameTime = std::chrono::duration_cast<std::chrono::microseconds>(frameEnd - frameStart);
+				mPreviousFrameTime = mThisFrameTime;
+#endif // RACCOON_ECS_PROFILE_SYSTEMS
 		}
 
 		void initResources()
@@ -360,6 +384,18 @@ namespace RaccoonEcs
 			mThreadPool.spawnThreads(threadsCount);
 		}
 
+#ifdef RACCOON_ECS_PROFILE_SYSTEMS
+		AsyncSystemsFrameTime getPreviousFrameTimeData()
+		{
+			return mPreviousFrameTime;
+		}
+#endif // RACCOON_ECS_PROFILE_SYSTEMS
+
+		const std::vector<std::string>& getSystemNames()
+		{
+			return mSystemIds;
+		}
+
 	private:
 		struct SystemDependencyInnerData
 		{
@@ -383,11 +419,11 @@ namespace RaccoonEcs
 		{
 			if (std::is_const_v<Component>)
 			{
-				dependenciesData.componentsToRead.push_back(Component::GetTypeId());
+				pushBackUnique(dependenciesData.componentsToRead, Component::GetTypeId());
 			}
 			else
 			{
-				dependenciesData.componentsToWrite.push_back(Component::GetTypeId());
+				pushBackUnique(dependenciesData.componentsToWrite, Component::GetTypeId());
 			}
 		}
 
@@ -400,7 +436,7 @@ namespace RaccoonEcs
 		template<typename SystemType, typename Component>
 		static void registerComponentAdder(const ComponentAdder<Component>&, SystemDependencyInnerData& dependenciesData)
 		{
-			dependenciesData.componentsToWrite.push_back(Component::GetTypeId());
+			pushBackUnique(dependenciesData.componentsToWrite, Component::GetTypeId());
 			dependenciesData.needsSynchronizationAfter = true;
 		}
 
@@ -506,7 +542,7 @@ namespace RaccoonEcs
 
 		void buildDependencyGraph()
 		{
-			mDependenctyGraph.initNodes(mSystems.size());
+			mDependencyGraph.initNodes(mSystems.size());
 
 			for (size_t systemIdx = 0; systemIdx < mSystems.size(); ++systemIdx)
 			{
@@ -514,7 +550,12 @@ namespace RaccoonEcs
 				for (const std::string& systemBefore : dependencyData.explicitDependencies.systemsBefore)
 				{
 					size_t systemBeforeIdx = mSystemIdxById.at(systemBefore);
-					mDependenctyGraph.addDependency(systemBeforeIdx, systemIdx);
+					mDependencyGraph.addDependency(systemBeforeIdx, systemIdx);
+				}
+				for (const std::string& systemAfter : dependencyData.explicitDependencies.systemsAfter)
+				{
+					size_t systemAfterIdx = mSystemIdxById.at(systemAfter);
+					mDependencyGraph.addDependency(systemIdx, systemAfterIdx);
 				}
 			}
 
@@ -524,12 +565,12 @@ namespace RaccoonEcs
 				{
 					if (!areSystemsCompatible(i, j))
 					{
-						mDependenctyGraph.addIncompatibility(i, j);
+						mDependencyGraph.addIncompatibility(i, j);
 					}
 				}
 			}
 
-			mDependenctyGraph.finalize();
+			mDependencyGraph.finalize();
 		}
 
 		bool areSystemsCompatible(size_t firstSystemIdx, size_t secondSystemIdx)
@@ -578,13 +619,35 @@ namespace RaccoonEcs
 			for (size_t systemIdx : systemsToRun)
 			{
 				mCurrentFrameDependencies->runSystem(systemIdx);
-				mThreadPool.executeTask([system = mSystems[systemIdx].get()]{
-					system->update();
-				}, [this, systemIdx]{
-					mCurrentFrameDependencies->finishSystem(systemIdx);
-					trySpawnNewSystemTasks();
-				});
-				break;
+				mThreadPool.executeTask(
+					[systemIdx, system = mSystems[systemIdx].get()]
+					{
+#ifdef RACCOON_ECS_PROFILE_SYSTEMS
+						AsyncSystemsFrameTime::OneSystemTime time;
+						time.systemIdx = systemIdx;
+						time.start = std::chrono::system_clock::now();
+#endif // RACCOON_ECS_PROFILE_SYSTEMS
+
+						// real work happening here
+						system->update();
+
+#ifdef RACCOON_ECS_PROFILE_SYSTEMS
+						time.end = std::chrono::system_clock::now();
+						return time;
+#else
+						return std::any{};
+#endif // RACCOON_ECS_PROFILE_SYSTEMS
+					},
+					[this, systemIdx]([[maybe_unused]] std::any&& result)
+					{
+#ifdef RACCOON_ECS_PROFILE_SYSTEMS
+						mThisFrameTime.systemsTime.push_back(std::any_cast<AsyncSystemsFrameTime::OneSystemTime>(result));
+#endif // RACCOON_ECS_PROFILE_SYSTEMS
+
+						mCurrentFrameDependencies->finishSystem(systemIdx);
+						trySpawnNewSystemTasks();
+					}
+				);
 			}
 		}
 
@@ -593,9 +656,14 @@ namespace RaccoonEcs
 		std::vector<std::string> mSystemIds;
 		std::vector<SystemDependencyInnerData> mSystemDependenciesData;
 		std::unordered_map<std::string, size_t> mSystemIdxById;
-		DependencyGraph mDependenctyGraph;
+		DependencyGraph mDependencyGraph;
 		ThreadPool mThreadPool;
 		std::unique_ptr<SystemDependencyTracer> mCurrentFrameDependencies;
+
+#ifdef RACCOON_ECS_PROFILE_SYSTEMS
+		AsyncSystemsFrameTime mThisFrameTime;
+		AsyncSystemsFrameTime mPreviousFrameTime;
+#endif // RACCOON_ECS_PROFILE_SYSTEMS
 	};
 
 } // namespace RaccoonEcs
