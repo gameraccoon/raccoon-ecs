@@ -247,7 +247,8 @@ namespace RaccoonEcs
 				return (componentVector.size() > index && componentVector[index] != nullptr);
 			}
 
-			RACCOON_ECS_ERROR(std::string("Trying to check component ") + std::to_string(typeId)
+			using std::to_string;
+			RACCOON_ECS_ERROR(std::string("Trying to check component ") + to_string(typeId)
 				+ " of non-existing entity: " + std::to_string(entity.getId()));
 			return false;
 		}
@@ -306,7 +307,8 @@ namespace RaccoonEcs
 			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
 			if (entityIdxItr == mEntityIndexMap.end())
 			{
-				RACCOON_ECS_ERROR(std::string("Trying to add component ") + std::to_string(typeId)
+				using std::to_string;
+				RACCOON_ECS_ERROR(std::string("Trying to add component ") + to_string(typeId)
 					+ " to a non-exsistent entity" + std::to_string(entity.getId()));
 				// memory leak here
 				return;
@@ -330,7 +332,8 @@ namespace RaccoonEcs
 			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
 			if (entityIdxItr == mEntityIndexMap.end())
 			{
-				RACCOON_ECS_ERROR(std::string("Trying to remove component ") + std::to_string(typeId)
+				using std::to_string;
+				RACCOON_ECS_ERROR(std::string("Trying to remove component ") + to_string(typeId)
 						+ " from a non-existent entity" + std::to_string(entity.getId()));
 				return;
 			}
