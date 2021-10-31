@@ -520,7 +520,7 @@ namespace RaccoonEcs
 		template<typename... Components, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSet(FunctionType processor, AdditionalData... data)
 		{
-			using namespace TemplateTrick;
+			using TemplateTrick::PackIdx;
 
 			const std::vector<size_t>& componentIndexes = mIndexes.template getIndex<Components...>(mComponents);
 
@@ -550,7 +550,7 @@ namespace RaccoonEcs
 		template<typename... Components, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSetWithEntity(FunctionType processor, AdditionalData... data)
 		{
-			using namespace TemplateTrick;
+			using TemplateTrick::PackIdx;
 
 			const std::vector<size_t>& componentIndexes = mIndexes.template getIndex<Components...>(mComponents);
 
