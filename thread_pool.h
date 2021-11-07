@@ -40,7 +40,13 @@ namespace RaccoonEcs
 		{
 			for (size_t i = 0; i < threadsCount; ++i)
 			{
-				mThreads.emplace_back([this]{ workerThreadFunction(); });
+				// reserve 0 for main thread
+				const size_t threadId = mThreads.size() + 1;
+				mThreads.emplace_back([this, threadId]
+				{
+					ThisThreadId = threadId;
+					workerThreadFunction();
+				});
 			}
 		}
 
@@ -98,6 +104,8 @@ namespace RaccoonEcs
 				lock.lock();
 			}
 		}
+
+		static size_t GetThisThreadId() { return ThisThreadId; }
 
 	private:
 		using TaskFn = std::function<std::any()>;
@@ -175,5 +183,6 @@ namespace RaccoonEcs
 		int mTasksLeftCount = 0;
 		std::list<Task> mTasksQueue;
 		std::list<Finalizer> mFinalizers;
+		static inline thread_local size_t ThisThreadId = 0;
 	};
 } // namespace RaccoonEcs

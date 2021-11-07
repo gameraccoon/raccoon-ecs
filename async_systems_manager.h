@@ -296,6 +296,7 @@ namespace RaccoonEcs
 		struct OneSystemTime
 		{
 			size_t systemIdx;
+			size_t workerThreadId;
 			std::chrono::time_point<std::chrono::system_clock> start;
 			std::chrono::time_point<std::chrono::system_clock> end;
 		};
@@ -624,6 +625,7 @@ namespace RaccoonEcs
 					{
 #ifdef RACCOON_ECS_PROFILE_SYSTEMS
 						AsyncSystemsFrameTime::OneSystemTime time;
+						time.workerThreadId = ThreadPool::GetThisThreadId();
 						time.systemIdx = systemIdx;
 						time.start = std::chrono::system_clock::now();
 #endif // RACCOON_ECS_PROFILE_SYSTEMS
