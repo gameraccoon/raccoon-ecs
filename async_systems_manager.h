@@ -312,6 +312,19 @@ namespace RaccoonEcs
 	class AsyncSystemsManager
 	{
 	public:
+		AsyncSystemsManager()
+			: mOwnThreadPool(new ThreadPool())
+			, mThreadPool(*mOwnThreadPool)
+		{}
+
+		/**
+		 * @brief Initializes AsyncSystemsManager with external thread pool
+		 * The external thread pool should always have longer live time that the AsyncSystemsManager object
+		 */
+		AsyncSystemsManager(ThreadPool& externalThreadPool)
+			: mThreadPool(externalThreadPool)
+		{}
+
 		template <typename SystemType, typename... ComponentOperations, typename... Args>
 		void registerSystem(
 			SystemDependencies&& dependencies,
@@ -343,9 +356,9 @@ namespace RaccoonEcs
 			mThreadPool.finalizeTasks();
 
 #ifdef RACCOON_ECS_PROFILE_SYSTEMS
-				std::chrono::time_point<std::chrono::system_clock> frameEnd = std::chrono::system_clock::now();
-				mThisFrameTime.frameTime = std::chrono::duration_cast<std::chrono::microseconds>(frameEnd - frameStart);
-				mPreviousFrameTime = mThisFrameTime;
+			std::chrono::time_point<std::chrono::system_clock> frameEnd = std::chrono::system_clock::now();
+			mThisFrameTime.frameTime = std::chrono::duration_cast<std::chrono::microseconds>(frameEnd - frameStart);
+			mPreviousFrameTime = mThisFrameTime;
 #endif // RACCOON_ECS_PROFILE_SYSTEMS
 		}
 
@@ -372,7 +385,7 @@ namespace RaccoonEcs
 		 *
 		 * Call it once after registering all your systems and before calling update for the first time
 		 */
-		void init(size_t threadsCount, const std::function<void(const InnerDataAccessor&)> initFunc = nullptr)
+		void init(size_t threadsCount = 0, const std::function<void(const InnerDataAccessor&)> initFunc = nullptr)
 		{
 			buildDependencyGraph();
 
@@ -382,7 +395,10 @@ namespace RaccoonEcs
 				initFunc(dataAccessor);
 			}
 
-			mThreadPool.spawnThreads(threadsCount);
+			if (threadsCount > 0)
+			{
+				mThreadPool.spawnThreads(threadsCount);
+			}
 		}
 
 #ifdef RACCOON_ECS_PROFILE_SYSTEMS
@@ -659,7 +675,8 @@ namespace RaccoonEcs
 		std::vector<SystemDependencyInnerData> mSystemDependenciesData;
 		std::unordered_map<std::string, size_t> mSystemIdxById;
 		DependencyGraph mDependencyGraph;
-		ThreadPool mThreadPool;
+		std::unique_ptr<ThreadPool> mOwnThreadPool;
+		ThreadPool& mThreadPool;
 		std::unique_ptr<SystemDependencyTracer> mCurrentFrameDependencies;
 
 #ifdef RACCOON_ECS_PROFILE_SYSTEMS
