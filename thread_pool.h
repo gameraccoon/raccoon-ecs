@@ -15,14 +15,19 @@ namespace RaccoonEcs
 	class ThreadPool
 	{
 	public:
-		ThreadPool() = default;
-
-		ThreadPool(size_t threadsCount)
+		template<typename Func = std::nullptr_t>
+		ThreadPool(Func&& threadPreShutdownTask = nullptr, size_t threadsCount = 0)
+			: mThreadPreShutdownTask(std::forward<Func>(threadPreShutdownTask))
 		{
 			spawnThreads(threadsCount);
 		}
 
 		~ThreadPool()
+		{
+			shutdown();
+		}
+
+		void shutdown()
 		{
 			{
 				std::lock_guard<std::mutex> l(mDataMutex);
@@ -34,6 +39,7 @@ namespace RaccoonEcs
 			{
 				thread.join();
 			}
+			mThreads.clear();
 		}
 
 		void spawnThreads(size_t threadsCount, size_t firstThreadIndex = 1)
@@ -95,7 +101,7 @@ namespace RaccoonEcs
 					mTasksQueue.emplace_back(groupId, std::move(task.first), std::move(task.second));
 				}
 			}
-			mWakeUpWorkingThread.notify_one();
+			mWakeUpWorkingThread.notify_all();
 		}
 
 		/**
@@ -170,6 +176,9 @@ namespace RaccoonEcs
 
 					if (mReadyToShutdown)
 					{
+						if (mThreadPreShutdownTask) {
+							mThreadPreShutdownTask();
+						}
 						return;
 					}
 
@@ -274,6 +283,7 @@ namespace RaccoonEcs
 		std::unordered_map<size_t, std::unique_ptr<FinalizerGroup>> mFinalizers;
 
 		std::vector<std::thread> mThreads;
+		std::function<void()> mThreadPreShutdownTask;
 
 		static inline thread_local size_t ThisThreadId = 0;
 	};

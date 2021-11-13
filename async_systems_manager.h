@@ -646,7 +646,7 @@ namespace RaccoonEcs
 						time.start = std::chrono::system_clock::now();
 #endif // RACCOON_ECS_PROFILE_SYSTEMS
 
-						// real work happening here
+						// real work is happening here
 						system->update();
 
 #ifdef RACCOON_ECS_PROFILE_SYSTEMS
