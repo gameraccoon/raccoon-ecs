@@ -223,7 +223,6 @@ namespace RaccoonEcs
 
 		static void finalizeTaskForGroup(FinalizerGroup& finalizerGroup)
 		{
-
 			std::vector<Finalizer> finalizersToExecute;
 			std::unique_lock<std::mutex> lock(finalizerGroup.dataMutex);
 

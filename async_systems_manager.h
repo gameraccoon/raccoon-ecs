@@ -345,7 +345,6 @@ namespace RaccoonEcs
 		{
 #ifdef RACCOON_ECS_PROFILE_SYSTEMS
 			std::chrono::time_point<std::chrono::system_clock> frameBegin = std::chrono::system_clock::now();
-			mThisFrameTime.systemsTime.clear();
 #endif // RACCOON_ECS_PROFILE_SYSTEMS
 
 			mCurrentFrameDependencies = std::make_unique<SystemDependencyTracer>(mDependencyGraph);
@@ -387,6 +386,8 @@ namespace RaccoonEcs
 		 */
 		void init(size_t threadsCount = 0, const std::function<void(const InnerDataAccessor&)> initFunc = nullptr)
 		{
+			mThisFrameTime.systemsTime.resize(mSystems.size());
+
 			buildDependencyGraph();
 
 			if (initFunc)
@@ -659,7 +660,7 @@ namespace RaccoonEcs
 					[this, systemIdx]([[maybe_unused]] std::any&& result)
 					{
 #ifdef RACCOON_ECS_PROFILE_SYSTEMS
-						mThisFrameTime.systemsTime.push_back(std::any_cast<AsyncSystemsFrameTime::OneSystemTime>(result));
+						mThisFrameTime.systemsTime[systemIdx] = std::any_cast<AsyncSystemsFrameTime::OneSystemTime>(result);
 #endif // RACCOON_ECS_PROFILE_SYSTEMS
 
 						mCurrentFrameDependencies->finishSystem(systemIdx);
