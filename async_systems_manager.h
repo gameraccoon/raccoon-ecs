@@ -297,7 +297,7 @@ namespace RaccoonEcs
 		{
 			size_t systemIdx;
 			size_t workerThreadId;
-			std::chrono::time_point<std::chrono::system_clock> start;
+			std::chrono::time_point<std::chrono::system_clock> begin;
 			std::chrono::time_point<std::chrono::system_clock> end;
 		};
 
@@ -344,7 +344,7 @@ namespace RaccoonEcs
 		void update()
 		{
 #ifdef RACCOON_ECS_PROFILE_SYSTEMS
-			std::chrono::time_point<std::chrono::system_clock> frameStart = std::chrono::system_clock::now();
+			std::chrono::time_point<std::chrono::system_clock> frameBegin = std::chrono::system_clock::now();
 			mThisFrameTime.systemsTime.clear();
 #endif // RACCOON_ECS_PROFILE_SYSTEMS
 
@@ -357,7 +357,7 @@ namespace RaccoonEcs
 
 #ifdef RACCOON_ECS_PROFILE_SYSTEMS
 			std::chrono::time_point<std::chrono::system_clock> frameEnd = std::chrono::system_clock::now();
-			mThisFrameTime.frameTime = std::chrono::duration_cast<std::chrono::microseconds>(frameEnd - frameStart);
+			mThisFrameTime.frameTime = std::chrono::duration_cast<std::chrono::microseconds>(frameEnd - frameBegin);
 			mPreviousFrameTime = mThisFrameTime;
 #endif // RACCOON_ECS_PROFILE_SYSTEMS
 		}
@@ -643,7 +643,7 @@ namespace RaccoonEcs
 						AsyncSystemsFrameTime::OneSystemTime time;
 						time.workerThreadId = ThreadPool::GetThisThreadId();
 						time.systemIdx = systemIdx;
-						time.start = std::chrono::system_clock::now();
+						time.begin = std::chrono::system_clock::now();
 #endif // RACCOON_ECS_PROFILE_SYSTEMS
 
 						// real work is happening here
