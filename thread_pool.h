@@ -1,7 +1,6 @@
 #pragma once
 
 #include <any>
-#include <atomic>
 #include <condition_variable>
 #include <functional>
 #include <list>
@@ -110,12 +109,11 @@ namespace RaccoonEcs
 		 */
 		void finalizeTasks(size_t groupId = 0)
 		{
-
 			mDataMutex.lock();
 			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(groupId);
 			mDataMutex.unlock();
 
-			finalizeTaskForGroup(finalizerGroup);
+			FinalizeTaskForGroup(finalizerGroup);
 		}
 
 		static size_t GetThisThreadId() { return ThisThreadId; }
@@ -172,7 +170,8 @@ namespace RaccoonEcs
 					mWakeUpWorkingThread.wait(lock,
 						[this]{
 							return !mTasksQueue.empty() || mReadyToShutdown;
-						});
+						}
+					);
 
 					if (mReadyToShutdown)
 					{
@@ -188,40 +187,43 @@ namespace RaccoonEcs
 
 				std::any result = currentTask.taskFn();
 
+				taskPostProcess(currentTask, std::move(result));
+			}
+		}
+
+		void taskPostProcess(Task& currentTask, std::any&& result)
+		{
+			mDataMutex.lock();
+			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(currentTask.groupId);
+			mDataMutex.unlock();
+
+			if (currentTask.finalizeFn)
+			{
 				{
-					mDataMutex.lock();
-					FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(currentTask.groupId);
-					mDataMutex.unlock();
-
-					if (currentTask.finalizeFn)
+					std::unique_lock<std::mutex> lock(finalizerGroup.dataMutex);
+					finalizerGroup.readyFinalizers.emplace_back(std::move(currentTask.finalizeFn), std::move(result));
+				}
+				finalizerGroup.wakeUpFinalizerThread.notify_all();
+			}
+			else
+			{
+				{
+					size_t tasksLeftCount = 0;
 					{
-						{
-							std::unique_lock<std::mutex> lock(finalizerGroup.dataMutex);
-							finalizerGroup.readyFinalizers.emplace_back(std::move(currentTask.finalizeFn), std::move(result));
-						}
-						finalizerGroup.wakeUpFinalizerThread.notify_all();
+						std::unique_lock<std::mutex> lock(finalizerGroup.dataMutex);
+						tasksLeftCount = --finalizerGroup.tasksLeftCount;
 					}
-					else
-					{
-						{
-							size_t tasksLeftCount = 0;
-							{
-								std::unique_lock<std::mutex> lock(finalizerGroup.dataMutex);
-								tasksLeftCount = --finalizerGroup.tasksLeftCount;
-							}
 
-							if (tasksLeftCount <= 0)
-							{
-								RACCOON_ECS_ASSERT(tasksLeftCount == 0, "finalizerGroup.tasksLeftCount should never be negative");
-								finalizerGroup.wakeUpFinalizerThread.notify_all();
-							}
-						}
+					if (tasksLeftCount <= 0)
+					{
+						RACCOON_ECS_ASSERT(tasksLeftCount == 0, "finalizerGroup.tasksLeftCount should never be negative");
+						finalizerGroup.wakeUpFinalizerThread.notify_all();
 					}
 				}
 			}
 		}
 
-		static void finalizeTaskForGroup(FinalizerGroup& finalizerGroup)
+		static void FinalizeTaskForGroup(FinalizerGroup& finalizerGroup)
 		{
 			std::vector<Finalizer> finalizersToExecute;
 			std::unique_lock<std::mutex> lock(finalizerGroup.dataMutex);

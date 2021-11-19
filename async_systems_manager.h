@@ -1,310 +1,18 @@
 #pragma once
 
-#include <chrono>
 #include <functional>
 #include <memory>
-#include <numeric>
-#include <type_traits>
-#include <unordered_set>
+#include <mutex>
 #include <vector>
 
 #include "async_operations.h"
 #include "error_handling.h"
 #include "thread_pool.h"
-
 #include "system.h"
+#include "system_dependencies.h"
 
 namespace RaccoonEcs
 {
-	struct SystemDependencies
-	{
-		explicit SystemDependencies(int customOrder = -1)
-			: customOrder(customOrder)
-		{}
-
-		template<typename... Systems>
-		SystemDependencies&& goesAfter() &&
-		{
-			(systemsBefore.push_back(Systems::GetSystemId()), ...);
-			return std::move(*this);
-		}
-
-		template<typename... Systems>
-		SystemDependencies&& goesBefore() &&
-		{
-			(systemsAfter.push_back(Systems::GetSystemId()), ...);
-			return std::move(*this);
-		}
-
-		template<typename... Systems>
-		SystemDependencies&& canNotBeRunTogetherWith() &&
-		{
-			(incompatibleSystems.push_back(Systems::GetSystemId()), ...);
-			return std::move(*this);
-		}
-
-		template<typename... Systems>
-		SystemDependencies&& limitConcurrentlyRunSystemsTo(int systemsCount) &&
-		{
-			allowConcurrentSystemsCount = systemsCount;
-			return std::move(*this);
-		}
-
-		std::vector<std::string> systemsBefore;
-		std::vector<std::string> systemsAfter;
-		std::vector<std::string> incompatibleSystems;
-		int allowConcurrentSystemsCount = -1;
-		int customOrder;
-	};
-
-	template<typename V, typename T>
-	void pushBackUnique(V& inOutVector, T&& value)
-	{
-		if (std::find(inOutVector.begin(), inOutVector.end(), value) == inOutVector.end())
-		{
-			inOutVector.push_back(std::forward<T>(value));
-		}
-	}
-
-	class DependencyGraph
-	{
-		friend class SystemDependencyTracer;
-
-	public:
-		void initNodes(size_t count)
-		{
-			mNodes.resize(count);
-		}
-
-		void addDependency(size_t beforeIdx, size_t afterIdx)
-		{
-			pushBackUnique(mNodes[afterIdx].nodesBefore, beforeIdx);
-			pushBackUnique(mNodes[beforeIdx].nodesAfter, afterIdx);
-		}
-
-		void addIncompatibility(size_t firstSystemIdx, size_t secondSystemIdx)
-		{
-			if (firstSystemIdx < secondSystemIdx)
-			{
-				mIncompatibilities.insert(std::make_pair(firstSystemIdx, secondSystemIdx));
-			}
-			else
-			{
-				mIncompatibilities.insert(std::make_pair(secondSystemIdx, firstSystemIdx));
-			}
-		}
-
-		void finalize()
-		{
-			for (size_t nodeIdx = 0; nodeIdx < mNodes.size(); ++nodeIdx)
-			{
-				Node& node = mNodes[nodeIdx];
-				// calculate distanceToTheLast
-				if (node.nodesAfter.empty())
-				{
-					std::vector<size_t> nextNodes;
-					node.distanceToTheLast = 1;
-					nextNodes.push_back(nodeIdx);
-
-					while (!nextNodes.empty())
-					{
-						Node& currentNode = mNodes[nextNodes.back()];
-						nextNodes.pop_back();
-
-						for (size_t nodeBeforeIdx : currentNode.nodesBefore)
-						{
-							Node& nodeBefore = mNodes[nodeBeforeIdx];
-							nodeBefore.distanceToTheLast = std::min(currentNode.distanceToTheLast + 1, nodeBefore.distanceToTheLast);
-							nextNodes.push_back(nodeBeforeIdx);
-						}
-					}
-				}
-
-				// populate mFirstNodes
-				if (mNodes[nodeIdx].nodesBefore.empty())
-				{
-					mFirstNodes.push_back(nodeIdx);
-				}
-			}
-		}
-
-		bool areSystemsCompatible(size_t firstSystemIdx, size_t secondSystemIdx) const
-		{
-			if (firstSystemIdx < secondSystemIdx)
-			{
-				return mIncompatibilities.find(std::make_pair(firstSystemIdx, secondSystemIdx)) == mIncompatibilities.end();
-			}
-			else
-			{
-				return mIncompatibilities.find(std::make_pair(secondSystemIdx, firstSystemIdx)) == mIncompatibilities.end();
-			}
-		}
-
-	private:
-		struct Node
-		{
-			std::vector<size_t> nodesBefore;
-			// to faster trace the graph
-			std::vector<size_t> nodesAfter;
-			// how many other systems depend on it (including inderect dependencies)
-			size_t distanceToTheLast = std::numeric_limits<size_t>::max();
-		};
-
-		struct IndexPairHash
-		{
-			std::size_t operator() (std::pair<size_t, size_t> const &pair) const
-			{
-				return pair.first ^ std::rotl(pair.second, 7);
-			}
-		};
-
-		std::vector<Node> mNodes;
-		std::vector<size_t> mFirstNodes;
-		std::unordered_set<std::pair<size_t, size_t>, IndexPairHash> mIncompatibilities;
-	};
-
-	class SystemDependencyTracer
-	{
-	public:
-		SystemDependencyTracer(const DependencyGraph& dependencyGraph)
-			: mDependencyGraph(&dependencyGraph)
-			, mResolvedDependencies(mDependencyGraph->mNodes.size(), false)
-			, mNextSystems(mDependencyGraph->mFirstNodes)
-		{
-		}
-
-		void finishSystem(size_t finishedSystem)
-		{
-			mActiveSystems.erase(
-				std::remove(
-					mActiveSystems.begin(),
-					mActiveSystems.end(),
-					finishedSystem),
-				mActiveSystems.end());
-
-			mResolvedDependencies[finishedSystem] = true;
-
-			const DependencyGraph::Node& systemNode = mDependencyGraph->mNodes[finishedSystem];
-			for (size_t nodeAfter : systemNode.nodesAfter)
-			{
-				pushBackUnique(mNextSystems, nodeAfter);
-			}
-		}
-
-		std::vector<size_t> getNextSystemsToRun() const
-		{
-			std::vector<size_t> systemsToRun;
-
-			if (!mNextSystems.empty())
-			{
-				// O(n*m)
-				for (size_t nextSystem : mNextSystems)
-				{
-					if (canRunSystem(nextSystem))
-					{
-						systemsToRun.push_back(nextSystem);
-					}
-				}
-			}
-
-			filterIncompatibleSystems(systemsToRun);
-
-			return systemsToRun;
-		}
-
-		void runSystem(size_t systemIdx)
-		{
-			mNextSystems.erase(
-				std::remove(
-					mNextSystems.begin(),
-					mNextSystems.end(),
-					systemIdx),
-				mNextSystems.end()
-			);
-
-			mActiveSystems.push_back(systemIdx);
-		}
-
-		bool canRunSystem(size_t systemIdx) const
-		{
-			const std::vector<size_t>& nodesBefore = mDependencyGraph->mNodes[systemIdx].nodesBefore;
-
-			for (size_t nodeBeforeIdx : nodesBefore)
-			{
-				if (mResolvedDependencies[nodeBeforeIdx] == false)
-				{
-					return false;
-				}
-			}
-
-			for (size_t activeSystem : mActiveSystems)
-			{
-				if (!mDependencyGraph->areSystemsCompatible(systemIdx, activeSystem))
-				{
-					return false;
-				}
-			}
-
-			return true;
-		}
-
-		void filterIncompatibleSystems(std::vector<size_t>& systems) const
-		{
-			std::vector<size_t> systemsToExclude;
-
-			// O(n^2)
-			for (size_t i = 0; i + 1 < systems.size(); ++i)
-			{
-				for (size_t j = i + 1; j < systems.size(); ++j)
-				{
-					if (!mDependencyGraph->areSystemsCompatible(systems[i], systems[j]))
-					{
-						// we prefer to keep systems that are more distant from the last
-						if (mDependencyGraph->mNodes[systems[i]].distanceToTheLast
-							<
-							mDependencyGraph->mNodes[systems[j]].distanceToTheLast)
-						{
-							systemsToExclude.push_back(i);
-						}
-						else
-						{
-							systemsToExclude.push_back(j);
-						}
-					}
-				}
-			}
-
-			// O(n log n)
-			std::sort(systemsToExclude.begin(), systemsToExclude.end(), std::greater());
-			systemsToExclude.erase(std::unique(systemsToExclude.begin(), systemsToExclude.end()), systemsToExclude.end());
-			for (size_t idx : systemsToExclude)
-			{
-				std::swap(systems[idx], systems.back());
-			}
-			systems.resize(systems.size() - systemsToExclude.size());
-		}
-
-	private:
-		const DependencyGraph* mDependencyGraph;
-		std::vector<bool> mResolvedDependencies;
-		std::vector<size_t> mActiveSystems;
-		std::vector<size_t> mNextSystems;
-	};
-
-	struct AsyncSystemsFrameTime
-	{
-		struct OneSystemTime
-		{
-			size_t systemIdx;
-			size_t workerThreadId;
-			std::chrono::time_point<std::chrono::system_clock> begin;
-			std::chrono::time_point<std::chrono::system_clock> end;
-		};
-
-		std::chrono::microseconds frameTime;
-		std::vector<OneSystemTime> systemsTime;
-	};
-
 	/**
 	 * Manager for async game systems
 	 */
@@ -343,22 +51,20 @@ namespace RaccoonEcs
 
 		void update()
 		{
-#ifdef RACCOON_ECS_PROFILE_SYSTEMS
-			std::chrono::time_point<std::chrono::system_clock> frameBegin = std::chrono::system_clock::now();
-#endif // RACCOON_ECS_PROFILE_SYSTEMS
-
+			std::unique_lock lock(mCurrentFrameDependenciesMutex);
 			mCurrentFrameDependencies = std::make_unique<SystemDependencyTracer>(mDependencyGraph);
 
-			trySpawnNewSystemTasks();
-
-			// this will block the thread and spawn new tasks as needed
-			mThreadPool.finalizeTasks();
-
-#ifdef RACCOON_ECS_PROFILE_SYSTEMS
-			std::chrono::time_point<std::chrono::system_clock> frameEnd = std::chrono::system_clock::now();
-			mThisFrameTime.frameTime = std::chrono::duration_cast<std::chrono::microseconds>(frameEnd - frameBegin);
-			mPreviousFrameTime = mThisFrameTime;
-#endif // RACCOON_ECS_PROFILE_SYSTEMS
+			while (mCurrentFrameDependencies->hasNotRunSystems())
+			{
+				mCurrentFrameDependenciesUpdated.wait(
+					lock,
+					[this]
+					{
+						return !mCurrentFrameDependencies->getNextSystemsToRun().empty() || !mCurrentFrameDependencies->hasNotRunSystems();
+					}
+				);
+				trySpawnNewSystemTasks(lock);
+			}
 		}
 
 		void initResources()
@@ -386,8 +92,6 @@ namespace RaccoonEcs
 		 */
 		void init(size_t threadsCount = 0, const std::function<void(const InnerDataAccessor&)> initFunc = nullptr)
 		{
-			mThisFrameTime.systemsTime.resize(mSystems.size());
-
 			buildDependencyGraph();
 
 			if (initFunc)
@@ -401,13 +105,6 @@ namespace RaccoonEcs
 				mThreadPool.spawnThreads(threadsCount);
 			}
 		}
-
-#ifdef RACCOON_ECS_PROFILE_SYSTEMS
-		AsyncSystemsFrameTime getPreviousFrameTimeData()
-		{
-			return mPreviousFrameTime;
-		}
-#endif // RACCOON_ECS_PROFILE_SYSTEMS
 
 		const std::vector<std::string>& getSystemNames()
 		{
@@ -630,47 +327,49 @@ namespace RaccoonEcs
 			return true;
 		}
 
-		void trySpawnNewSystemTasks()
+		void trySpawnNewSystemTasks(std::unique_lock<std::mutex>& lock)
 		{
 			std::vector<size_t> systemsToRun = mCurrentFrameDependencies->getNextSystemsToRun();
 
-			for (size_t systemIdx : systemsToRun)
+			// schedule tasks that exceed one (that we run below)
+			for (size_t i = 1; i < systemsToRun.size(); ++i)
 			{
+				const size_t systemIdx = systemsToRun[i];
 				mCurrentFrameDependencies->runSystem(systemIdx);
 				mThreadPool.executeTask(
-					[systemIdx, system = mSystems[systemIdx].get()]
+					[this, systemIdx]
 					{
-#ifdef RACCOON_ECS_PROFILE_SYSTEMS
-						AsyncSystemsFrameTime::OneSystemTime time;
-						time.workerThreadId = ThreadPool::GetThisThreadId();
-						time.systemIdx = systemIdx;
-						time.begin = std::chrono::system_clock::now();
-#endif // RACCOON_ECS_PROFILE_SYSTEMS
+						mSystems[systemIdx]->update();
 
-						// real work is happening here
-						system->update();
+						{
+							std::unique_lock lock(mCurrentFrameDependenciesMutex);
+							mCurrentFrameDependencies->finishSystem(systemIdx);
+							trySpawnNewSystemTasks(lock);
+						}
 
-#ifdef RACCOON_ECS_PROFILE_SYSTEMS
-						time.end = std::chrono::system_clock::now();
-						return time;
-#else
+						mCurrentFrameDependenciesUpdated.notify_one();
 						return std::any{};
-#endif // RACCOON_ECS_PROFILE_SYSTEMS
-					},
-					[this, systemIdx]([[maybe_unused]] std::any&& result)
-					{
-#ifdef RACCOON_ECS_PROFILE_SYSTEMS
-						mThisFrameTime.systemsTime[systemIdx] = std::any_cast<AsyncSystemsFrameTime::OneSystemTime>(result);
-#endif // RACCOON_ECS_PROFILE_SYSTEMS
-
-						mCurrentFrameDependencies->finishSystem(systemIdx);
-						trySpawnNewSystemTasks();
-					}
+					}, nullptr
 				);
+			}
+
+			if (!systemsToRun.empty())
+			{
+				const size_t systemIdx = systemsToRun[0];
+				mCurrentFrameDependencies->runSystem(systemIdx);
+
+				lock.unlock();
+				mSystems[systemIdx]->update();
+				lock.lock();
+
+				mCurrentFrameDependencies->finishSystem(systemIdx);
+
+				trySpawnNewSystemTasks(lock);
 			}
 		}
 
 	private:
+		// containers that are immutable after calling init()
 		std::vector<std::unique_ptr<System>> mSystems;
 		std::vector<std::string> mSystemIds;
 		std::vector<SystemDependencyInnerData> mSystemDependenciesData;
@@ -678,12 +377,11 @@ namespace RaccoonEcs
 		DependencyGraph mDependencyGraph;
 		std::unique_ptr<ThreadPool> mOwnThreadPool;
 		ThreadPool& mThreadPool;
-		std::unique_ptr<SystemDependencyTracer> mCurrentFrameDependencies;
 
-#ifdef RACCOON_ECS_PROFILE_SYSTEMS
-		AsyncSystemsFrameTime mThisFrameTime;
-		AsyncSystemsFrameTime mPreviousFrameTime;
-#endif // RACCOON_ECS_PROFILE_SYSTEMS
+		// mutable data
+		std::unique_ptr<SystemDependencyTracer> mCurrentFrameDependencies;
+		std::mutex mCurrentFrameDependenciesMutex;
+		std::condition_variable mCurrentFrameDependenciesUpdated;
 	};
 
 } // namespace RaccoonEcs
