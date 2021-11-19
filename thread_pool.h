@@ -15,7 +15,7 @@ namespace RaccoonEcs
 	{
 	public:
 		template<typename Func = std::nullptr_t>
-		ThreadPool(Func&& threadPreShutdownTask = nullptr, size_t threadsCount = 0)
+		ThreadPool(size_t threadsCount = 0, Func&& threadPreShutdownTask = nullptr)
 			: mThreadPreShutdownTask(std::forward<Func>(threadPreShutdownTask))
 		{
 			spawnThreads(threadsCount);
