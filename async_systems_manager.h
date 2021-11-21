@@ -301,7 +301,7 @@ namespace RaccoonEcs
 			// sych systems will be run exclusively anyway, so no need to add incompatibility specifically
 			if (firstSystemDependencies.exclusiveGlobalAccess || secondSystemDependencies.exclusiveGlobalAccess)
 			{
-				return true;
+				return false;
 			}
 
 			auto doesContain = [](const std::vector<ComponentTypeId>& vector, ComponentTypeId value) -> bool {
