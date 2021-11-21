@@ -5,6 +5,8 @@
 #include <vector>
 #include <string>
 
+#include "error_handling.h"
+
 namespace RaccoonEcs
 {
 	struct SystemDependencies
@@ -99,6 +101,8 @@ namespace RaccoonEcs
 
 					while (!nextNodes.empty())
 					{
+						RACCOON_ECS_ASSERT(nextNodes.size() <= mNodes.size(), "Too deep dependency tree, probably circular system dependency");
+
 						Node& currentNode = mNodes[nextNodes.back()];
 						nextNodes.pop_back();
 

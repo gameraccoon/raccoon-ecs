@@ -153,12 +153,14 @@ namespace RaccoonEcs
 		{
 			pushBackUnique(dependenciesData.componentsToWrite, Component::GetTypeId());
 			dependenciesData.needsSynchronizationAfter = true;
+			dependenciesData.exclusiveGlobalAccess = true; // we need it for now until we do proper "synchronization after"
 		}
 
 		template<typename SystemType, typename Component>
 		static void registerComponentRemover(const ComponentRemover<Component>&, SystemDependencyInnerData& dependenciesData)
 		{
 			dependenciesData.needsSynchronizationAfter = true;
+			dependenciesData.exclusiveGlobalAccess = true; // we need it for now until we do proper "synchronization after"
 		}
 
 		template<typename SystemType, typename Component>
@@ -177,18 +179,21 @@ namespace RaccoonEcs
 		static void registerEntityAdder(SystemDependencyInnerData& dependenciesData)
 		{
 			dependenciesData.needsSynchronizationAfter = true;
+			dependenciesData.exclusiveGlobalAccess = true; // we need it for now until we do proper "synchronization after"
 		}
 
 		template<typename SystemType>
 		static void registerEntityRemover(SystemDependencyInnerData& dependenciesData)
 		{
 			dependenciesData.needsSynchronizationAfter = true;
+			dependenciesData.exclusiveGlobalAccess = true; // we need it for now until we do proper "synchronization after"
 		}
 
 		template<typename SystemType>
 		static void registerEntityTransferer(SystemDependencyInnerData& dependenciesData)
 		{
 			dependenciesData.needsSynchronizationAfter = true;
+			dependenciesData.exclusiveGlobalAccess = true; // we need it for now until we do proper "synchronization after"
 		}
 
 		template<typename SystemType>
