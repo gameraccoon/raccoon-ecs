@@ -28,3 +28,5 @@ do \
 #define RACCOON_ECS_ASSERT(condition, message)
 
 #endif // RACCOON_ECS_DEBUG_CHECKS_ENABLED
+
+#define RACCOON_ECS_COMPILE_ERROR(cond) typedef int assert ## __LINE__ [!!(condition) ? 1 : -1];

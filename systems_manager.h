@@ -24,35 +24,15 @@ namespace RaccoonEcs
 		void registerSystem(Args&&... args)
 		{
 			mSystems.emplace_back(new T(std::forward<Args>(args)...));
+			mSystemIds.push_back(T::GetSystemId());
 		}
 
 		void update()
 		{
-#ifdef PROFILE_SYSTEMS
-			mThisFrameTime.frameTime = std::chrono::microseconds::zero();
-			mThisFrameTime.systemsTime.clear();
-#endif // PROFILE_SYSTEMS
-
 			for (std::unique_ptr<System>& system : mSystems)
 			{
-#ifdef PROFILE_SYSTEMS
-				std::chrono::time_point<std::chrono::system_clock> start = std::chrono::system_clock::now();
-#endif // PROFILE_SYSTEMS
-
-				// real work is being done here
 				system->update();
-
-#ifdef PROFILE_SYSTEMS
-				std::chrono::time_point<std::chrono::system_clock> end = std::chrono::system_clock::now();
-				auto timeDiff = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-				mThisFrameTime.frameTime += timeDiff;
-				mThisFrameTime.systemsTime.push_back(timeDiff);
-#endif // PROFILE_SYSTEMS
 			}
-
-#ifdef PROFILE_SYSTEMS
-			mPreviousFrameTime = mThisFrameTime;
-#endif // PROFILE_SYSTEMS
 		}
 
 		void initResources()
@@ -72,31 +52,14 @@ namespace RaccoonEcs
 			mSystems.clear();
 		}
 
-#ifdef PROFILE_SYSTEMS
-	SystemsFrameTime getPreviousFrameTimeData()
-	{
-		return mPreviousFrameTime;
-	}
-#endif // PROFILE_SYSTEMS
-
-	std::vector<std::string> getSystemNames()
-	{
-		std::vector<std::string> result;
-		result.reserve(mSystems.size());
-		for (std::unique_ptr<System>& system : mSystems)
+		const std::vector<std::string>& getSystemNames()
 		{
-			result.push_back(system->getName());
+			return mSystemIds;
 		}
-		return result;
-	}
 
 	private:
 		std::vector<std::unique_ptr<System>> mSystems;
-
-#ifdef PROFILE_SYSTEMS
-		SystemsFrameTime mThisFrameTime;
-		SystemsFrameTime mPreviousFrameTime;
-#endif // PROFILE_SYSTEMS
+		std::vector<std::string> mSystemIds;
 	};
 
 } // namespace RaccoonEcs

@@ -44,33 +44,35 @@ namespace RaccoonEcs
 			};
 		}
 
-		[[nodiscard]] CreationFn getCreationFn(ComponentTypeId className) const
+		[[nodiscard]] CreationFn getCreationFn(ComponentTypeId typeId) const
 		{
-			const auto& it = mComponentCreators.find(className);
+			const auto& it = mComponentCreators.find(typeId);
 			if (it != mComponentCreators.cend())
 			{
 				return it->second;
 			}
 
-			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + std::to_string(className) + "'");
+			using std::to_string;
+			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + to_string(typeId) + "'");
 			return nullptr;
 		}
 
-		[[nodiscard]] DeletionFn getDeletionFn(ComponentTypeId className) const
+		[[nodiscard]] DeletionFn getDeletionFn(ComponentTypeId typeId) const
 		{
-			const auto& it = mComponentDeleters.find(className);
+			const auto& it = mComponentDeleters.find(typeId);
 			if (it != mComponentDeleters.cend())
 			{
 				return it->second;
 			}
 
-			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + std::to_string(className) + "'");
+			using std::to_string;
+			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + to_string(typeId) + "'");
 			return nullptr;
 		}
 
-		[[nodiscard]] void* createComponent(ComponentTypeId typeName) const
+		[[nodiscard]] void* createComponent(ComponentTypeId typeId) const
 		{
-			const auto& it = mComponentCreators.find(typeName);
+			const auto& it = mComponentCreators.find(typeId);
 			if (it != mComponentCreators.cend() && it->second)
 			{
 				return it->second();

@@ -2,6 +2,7 @@
 
 #include "entity.h"
 #include "entity_manager.h"
+#include "async_entity_manager.h"
 
 namespace RaccoonEcs
 {
@@ -54,11 +55,66 @@ namespace RaccoonEcs
 		{
 			return mEntity;
 		}
+
 		EntityManager& getManager() { return mManager; }
 
 	private:
 		Entity mEntity;
 		EntityManager& mManager;
+	};
+
+	template <typename ComponentTypeId>
+	class AsyncEntityViewImpl
+	{
+	public:
+		using AsyncEntityManager = AsyncEntityManagerImpl<ComponentTypeId>;
+
+		AsyncEntityViewImpl(Entity entity, AsyncEntityManager& manager)
+			: mEntity(entity)
+			, mManager(manager)
+		{
+		}
+
+		template<typename Operation>
+		auto* addComponent(const Operation& operation)
+		{
+			return operation.template addComponent(mManager, mEntity);
+		}
+
+		template<typename Operation>
+		void removeComponent(const Operation& operation)
+		{
+			operation.template removeComponent(mManager, mEntity);
+		}
+
+		template<typename Operation>
+		auto getComponents(const Operation& operation)
+		{
+			return operation.template getEntityComponents(mManager, mEntity);
+		}
+
+		template<typename Operation>
+		auto* scheduleAddComponent(const Operation& operation)
+		{
+			return operation.template scheduleAddComponent(mManager, mEntity);
+		}
+
+		template<typename Operation>
+		void scheduleRemoveComponent(const Operation& operation)
+		{
+			operation.template scheduleRemoveComponent(mManager, mEntity);
+		}
+
+		[[nodiscard]] Entity getEntity() const
+		{
+			return mEntity;
+		}
+
+		AsyncEntityManager& getManager() { return mManager; }
+
+	private:
+		Entity mEntity;
+		AsyncEntityManager& mManager;
 	};
 
 } // namespace RaccoonEcs
