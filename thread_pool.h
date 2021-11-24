@@ -67,7 +67,7 @@ namespace RaccoonEcs
 			FinalizerGroup& group = getOrCreateFinalizerGroupAtomically(groupId);
 			++group.tasksNotFinalizedCount;
 
-			mTasksStack.enqueue_emplace(groupId, std::forward<TaskFnT>(taskFn), std::forward<FinalizeFnT>(finalizeFn));
+			mTasksQueue.enqueue_emplace(groupId, std::forward<TaskFnT>(taskFn), std::forward<FinalizeFnT>(finalizeFn));
 		}
 
 		template<typename TaskFnT, typename FinalizeFnT>
@@ -81,7 +81,7 @@ namespace RaccoonEcs
 
 			for (auto& task : tasks)
 			{
-				mTasksStack.enqueue_emplace(groupId, std::move(task.first), std::move(task.second));
+				mTasksQueue.enqueue_emplace(groupId, std::move(task.first), std::move(task.second));
 			}
 		}
 
@@ -110,7 +110,7 @@ namespace RaccoonEcs
 					finalizerGroup.tasksNotFinalizedCount -= count;
 					finalizeReadyTasks(finalizersToExecute, count);
 				}
-				else if (mTasksStack.try_dequeue(currentTask))
+				else if (mTasksQueue.try_dequeue(currentTask))
 				{
 					processAndFinalizeOneTask(groupId, currentTask);
 				}
@@ -166,7 +166,7 @@ namespace RaccoonEcs
 
 			while(!mReadyToShutdown.load(std::memory_order::acquire))
 			{
-				if (mTasksStack.try_dequeue(currentTask))
+				if (mTasksQueue.try_dequeue(currentTask))
 				{
 					std::any result = currentTask.taskFn();
 
@@ -264,7 +264,7 @@ namespace RaccoonEcs
 
 	private:
 		std::atomic_bool mReadyToShutdown = false;
-		moodycamel::ConcurrentQueue<Task> mTasksStack;
+		moodycamel::ConcurrentQueue<Task> mTasksQueue;
 
 		std::mutex mFinalizersMutex;
 		std::unordered_map<size_t, std::unique_ptr<FinalizerGroup>> mFinalizers;
