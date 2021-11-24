@@ -69,7 +69,6 @@ namespace RaccoonEcs
 				std::lock_guard<std::mutex> l(mDataMutex);
 
 				FinalizerGroup& group = getOrCreateFinalizerGroup(groupId);
-				++group.tasksNotStartedCount;
 				++group.tasksNotFinalizedCount;
 
 				mTasksStack.enqueue_emplace(groupId, std::forward<TaskFnT>(taskFn), std::forward<FinalizeFnT>(finalizeFn));
@@ -85,7 +84,6 @@ namespace RaccoonEcs
 				std::lock_guard<std::mutex> l(mDataMutex);
 
 				FinalizerGroup& group = getOrCreateFinalizerGroup(groupId);
-				group.tasksNotStartedCount += tasks.size();
 				group.tasksNotFinalizedCount += tasks.size();
 
 				for (auto& task : tasks)
@@ -109,54 +107,25 @@ namespace RaccoonEcs
 		void processAndFinalizeTasks(size_t groupId = 0)
 		{
 			std::vector<Finalizer> finalizersToExecute;
+			Task currentTask;
 
 			std::unique_lock<std::mutex> lock(mDataMutex);
 			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(groupId);
 
 			while(finalizerGroup.tasksNotFinalizedCount > 0)
 			{
-				while (finalizerGroup.readyFinalizers.empty() && finalizerGroup.tasksNotFinalizedCount > 0 && finalizerGroup.tasksNotStartedCount <= 0)
+				if (!finalizerGroup.readyFinalizers.empty())
+				{
+					finalizeReadyTasks(finalizerGroup, finalizersToExecute, lock);
+				}
+				else if (mTasksStack.try_dequeue(currentTask))
+				{
+					processAndFinalizeOneTask(groupId, currentTask, lock);
+				}
+				else
 				{
 					lock.unlock();
 					std::this_thread::yield();
-					lock.lock();
-				}
-
-				// limit finalizerGroup scope
-				{
-					if (finalizerGroup.tasksNotFinalizedCount <= 0)
-					{
-						RACCOON_ECS_ASSERT(finalizerGroup.tasksNotFinalizedCount == 0, "mTasksLeftCount should never be negative");
-						break;
-					}
-
-					while (!finalizerGroup.readyFinalizers.empty())
-					{
-						finalizersToExecute.push_back(std::move(finalizerGroup.readyFinalizers.front()));
-						finalizerGroup.readyFinalizers.pop_front();
-						--finalizerGroup.tasksNotFinalizedCount;
-					}
-
-					// if we don't have any finalizers to process, process tasks
-					if (finalizersToExecute.empty())
-					{
-						processAndFinalizeOneTask(groupId, lock);
-					}
-				}
-
-				if (!finalizersToExecute.empty())
-				{
-					// finalizers can be executed without having the mutex locked
-					lock.unlock();
-					for (Finalizer& finalizer : finalizersToExecute)
-					{
-						if (finalizer.fn)
-						{
-							finalizer.fn(std::move(finalizer.result));
-						}
-					}
-					finalizersToExecute.clear();
-					// need to lock it here to protect tasksLeftCount in the loop check
 					lock.lock();
 				}
 			}
@@ -182,7 +151,6 @@ namespace RaccoonEcs
 		struct FinalizerGroup
 		{
 			int tasksNotFinalizedCount = 0;
-			int tasksNotStartedCount = 0;
 			std::list<Finalizer> readyFinalizers;
 		};
 
@@ -206,35 +174,23 @@ namespace RaccoonEcs
 		{
 			Task currentTask;
 
-			while(true)
+			while(!mReadyToShutdown.load(std::memory_order::acquire))
 			{
-				const bool readyToShutdown = mReadyToShutdown.load(std::memory_order::acquire);
-
-				if (readyToShutdown)
+				if (mTasksStack.try_dequeue(currentTask))
 				{
-					if (mThreadPreShutdownTask) {
-						mThreadPreShutdownTask();
-					}
-					return;
+					std::any result = currentTask.taskFn();
+
+					taskPostProcess(currentTask, std::move(result));
 				}
-
-				const bool gotNewTask = mTasksStack.try_dequeue(currentTask);
-
-				if (!gotNewTask)
+				else
 				{
 					std::this_thread::yield();
-					continue;
 				}
+			}
 
-				{
-					std::unique_lock<std::mutex> lock(mDataMutex);
-					FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(currentTask.groupId);
-					--finalizerGroup.tasksNotStartedCount;
-				}
-
-				std::any result = currentTask.taskFn();
-
-				taskPostProcess(currentTask, std::move(result));
+			if (mThreadPreShutdownTask)
+			{
+				mThreadPreShutdownTask();
 			}
 		}
 
@@ -276,23 +232,27 @@ namespace RaccoonEcs
 					return !finalizerGroup.readyFinalizers.empty() || finalizerGroup.tasksNotFinalizedCount <= 0;
 				});
 
-				// limit finalizerGroup scope
+				if (finalizerGroup.tasksNotFinalizedCount <= 0)
 				{
-					if (finalizerGroup.tasksNotFinalizedCount <= 0)
-					{
-						RACCOON_ECS_ASSERT(finalizerGroup.tasksNotFinalizedCount == 0, "mTasksLeftCount should never be negative");
-						break;
-					}
-
-					while (!finalizerGroup.readyFinalizers.empty())
-					{
-						finalizersToExecute.push_back(std::move(finalizerGroup.readyFinalizers.front()));
-						finalizerGroup.readyFinalizers.pop_front();
-						--finalizerGroup.tasksNotFinalizedCount;
-					}
+					RACCOON_ECS_ASSERT(finalizerGroup.tasksNotFinalizedCount == 0, "mTasksLeftCount should never be negative");
+					break;
 				}
 
-				// finalizers can be executed without having the mutex locked
+				finalizeReadyTasks(finalizerGroup, finalizersToExecute, lock);
+			}
+		}
+
+		void finalizeReadyTasks(FinalizerGroup& finalizerGroup, std::vector<Finalizer>& finalizersToExecute, std::unique_lock<std::mutex>& lock)
+		{
+			while (!finalizerGroup.readyFinalizers.empty())
+			{
+				finalizersToExecute.push_back(std::move(finalizerGroup.readyFinalizers.front()));
+				finalizerGroup.readyFinalizers.pop_front();
+				--finalizerGroup.tasksNotFinalizedCount;
+			}
+
+			if (!finalizersToExecute.empty())
+			{
 				lock.unlock();
 				for (Finalizer& finalizer : finalizersToExecute)
 				{
@@ -302,7 +262,6 @@ namespace RaccoonEcs
 					}
 				}
 				finalizersToExecute.clear();
-				// need to lock it here to protect tasksLeftCount in the loop check
 				lock.lock();
 			}
 		}
@@ -317,28 +276,21 @@ namespace RaccoonEcs
 			return *groupPtr;
 		}
 
-		void processAndFinalizeOneTask(size_t groupId, std::unique_lock<std::mutex>& lock)
+		void processAndFinalizeOneTask(size_t groupId, Task& currentTask, std::unique_lock<std::mutex>& lock)
 		{
-			Task currentTask;
-			const bool gotNewTask = mTasksStack.try_dequeue(currentTask);
+			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(currentTask.groupId);
 
-			if (gotNewTask)
+			lock.unlock();
+			std::any result = currentTask.taskFn();
+			lock.lock();
+
+			if (currentTask.groupId == groupId)
 			{
-				FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(currentTask.groupId);
-				--finalizerGroup.tasksNotStartedCount;
-
-				lock.unlock();
-				std::any result = currentTask.taskFn();
-				lock.lock();
-
-				if (currentTask.groupId == groupId)
+				if (currentTask.finalizeFn)
 				{
-					if (currentTask.finalizeFn)
-					{
-						currentTask.finalizeFn(std::move(result));
-					}
-					--finalizerGroup.tasksNotFinalizedCount;
+					currentTask.finalizeFn(std::move(result));
 				}
+				--finalizerGroup.tasksNotFinalizedCount;
 			}
 		}
 
