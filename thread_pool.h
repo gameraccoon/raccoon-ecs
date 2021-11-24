@@ -3,7 +3,6 @@
 #include <any>
 #include <condition_variable>
 #include <functional>
-#include <list>
 #include <thread>
 #include <vector>
 
@@ -65,14 +64,10 @@ namespace RaccoonEcs
 		{
 			RACCOON_ECS_ASSERT(!mThreads.empty(), "No threads to execute the task");
 
-			{
-				std::lock_guard<std::mutex> l(mDataMutex);
+			FinalizerGroup& group = getOrCreateFinalizerGroupAtomically(groupId);
+			++group.tasksNotFinalizedCount;
 
-				FinalizerGroup& group = getOrCreateFinalizerGroup(groupId);
-				++group.tasksNotFinalizedCount;
-
-				mTasksStack.enqueue_emplace(groupId, std::forward<TaskFnT>(taskFn), std::forward<FinalizeFnT>(finalizeFn));
-			}
+			mTasksStack.enqueue_emplace(groupId, std::forward<TaskFnT>(taskFn), std::forward<FinalizeFnT>(finalizeFn));
 		}
 
 		template<typename TaskFnT, typename FinalizeFnT>
@@ -80,16 +75,13 @@ namespace RaccoonEcs
 		{
 			RACCOON_ECS_ASSERT(!mThreads.empty(), "No threads to execute the task");
 
+			FinalizerGroup& group = getOrCreateFinalizerGroupAtomically(groupId);
+
+			group.tasksNotFinalizedCount += tasks.size();
+
+			for (auto& task : tasks)
 			{
-				std::lock_guard<std::mutex> l(mDataMutex);
-
-				FinalizerGroup& group = getOrCreateFinalizerGroup(groupId);
-				group.tasksNotFinalizedCount += tasks.size();
-
-				for (auto& task : tasks)
-				{
-					mTasksStack.enqueue_emplace(groupId, std::move(task.first), std::move(task.second));
-				}
+				mTasksStack.enqueue_emplace(groupId, std::move(task.first), std::move(task.second));
 			}
 		}
 
@@ -99,34 +91,32 @@ namespace RaccoonEcs
 		 */
 		void finalizeTasks(size_t groupId = 0)
 		{
-			std::unique_lock<std::mutex> lock(mDataMutex);
-			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(groupId);
-			finalizeTaskForGroup(finalizerGroup, lock);
+			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroupAtomically(groupId);
+
+			finalizeTaskForGroup(finalizerGroup);
 		}
 
 		void processAndFinalizeTasks(size_t groupId = 0)
 		{
-			std::vector<Finalizer> finalizersToExecute;
+			std::vector<Finalizer> finalizersToExecute(24);
 			Task currentTask;
 
-			std::unique_lock<std::mutex> lock(mDataMutex);
-			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(groupId);
+			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroupAtomically(groupId);
 
-			while(finalizerGroup.tasksNotFinalizedCount > 0)
+			while(finalizerGroup.tasksNotFinalizedCount.load(std::memory_order::acquire) > 0)
 			{
-				if (!finalizerGroup.readyFinalizers.empty())
+				if (size_t count = finalizerGroup.readyFinalizers.try_dequeue_bulk(finalizersToExecute.begin(), finalizersToExecute.size()); count > 0)
 				{
-					finalizeReadyTasks(finalizerGroup, finalizersToExecute, lock);
+					finalizerGroup.tasksNotFinalizedCount -= count;
+					finalizeReadyTasks(finalizersToExecute, count);
 				}
 				else if (mTasksStack.try_dequeue(currentTask))
 				{
-					processAndFinalizeOneTask(groupId, currentTask, lock);
+					processAndFinalizeOneTask(groupId, currentTask);
 				}
 				else
 				{
-					lock.unlock();
 					std::this_thread::yield();
-					lock.lock();
 				}
 			}
 		}
@@ -150,8 +140,8 @@ namespace RaccoonEcs
 
 		struct FinalizerGroup
 		{
-			int tasksNotFinalizedCount = 0;
-			std::list<Finalizer> readyFinalizers;
+			std::atomic<int> tasksNotFinalizedCount = 0;
+			moodycamel::ConcurrentQueue<Finalizer> readyFinalizers;
 		};
 
 		struct Task
@@ -198,77 +188,56 @@ namespace RaccoonEcs
 		{
 			if (currentTask.finalizeFn)
 			{
-				{
-					std::unique_lock<std::mutex> lock(mDataMutex);
-					FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(currentTask.groupId);
-					finalizerGroup.readyFinalizers.emplace_back(std::move(currentTask.finalizeFn), std::move(result));
-				}
-				mFinalizersChanged.notify_all();
+				FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroupAtomically(currentTask.groupId);
+				finalizerGroup.readyFinalizers.enqueue_emplace(std::move(currentTask.finalizeFn), std::move(result));
 			}
 			else
 			{
 				size_t tasksLeftCount = 0;
-				{
-					std::unique_lock<std::mutex> lock(mDataMutex);
-					FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(currentTask.groupId);
-					tasksLeftCount = --finalizerGroup.tasksNotFinalizedCount;
-				}
+				FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroupAtomically(currentTask.groupId);
+				tasksLeftCount = --finalizerGroup.tasksNotFinalizedCount;
 
 				if (tasksLeftCount <= 0)
 				{
 					RACCOON_ECS_ASSERT(tasksLeftCount == 0, "finalizerGroup.tasksLeftCount should never be negative");
-					mFinalizersChanged.notify_all();
 				}
 			}
 		}
 
-		void finalizeTaskForGroup(FinalizerGroup& finalizerGroup, std::unique_lock<std::mutex>& lock)
+		void finalizeTaskForGroup(FinalizerGroup& finalizerGroup)
 		{
-			std::vector<Finalizer> finalizersToExecute;
+			std::vector<Finalizer> finalizersToExecute(24);
 
-			while(finalizerGroup.tasksNotFinalizedCount > 0)
+			while(finalizerGroup.tasksNotFinalizedCount.load(std::memory_order::acquire) > 0)
 			{
-				mFinalizersChanged.wait(lock, [&finalizerGroup]{
-					return !finalizerGroup.readyFinalizers.empty() || finalizerGroup.tasksNotFinalizedCount <= 0;
-				});
-
-				if (finalizerGroup.tasksNotFinalizedCount <= 0)
+				if (size_t count = finalizerGroup.readyFinalizers.try_dequeue_bulk(finalizersToExecute.begin(), finalizersToExecute.size()); count > 0)
 				{
-					RACCOON_ECS_ASSERT(finalizerGroup.tasksNotFinalizedCount == 0, "mTasksLeftCount should never be negative");
-					break;
+					finalizerGroup.tasksNotFinalizedCount -= count;
+					finalizeReadyTasks(finalizersToExecute, count);
 				}
-
-				finalizeReadyTasks(finalizerGroup, finalizersToExecute, lock);
 			}
 		}
 
-		void finalizeReadyTasks(FinalizerGroup& finalizerGroup, std::vector<Finalizer>& finalizersToExecute, std::unique_lock<std::mutex>& lock)
+		void finalizeReadyTasks(std::vector<Finalizer>& finalizersToExecute, size_t size)
 		{
-			while (!finalizerGroup.readyFinalizers.empty())
-			{
-				finalizersToExecute.push_back(std::move(finalizerGroup.readyFinalizers.front()));
-				finalizerGroup.readyFinalizers.pop_front();
-				--finalizerGroup.tasksNotFinalizedCount;
-			}
-
 			if (!finalizersToExecute.empty())
 			{
-				lock.unlock();
-				for (Finalizer& finalizer : finalizersToExecute)
+				for (size_t i = 0; i < size; ++i)
 				{
+					Finalizer& finalizer = finalizersToExecute[i];
 					if (finalizer.fn)
 					{
 						finalizer.fn(std::move(finalizer.result));
 					}
 				}
-				finalizersToExecute.clear();
-				lock.lock();
 			}
 		}
 
-		FinalizerGroup& getOrCreateFinalizerGroup(size_t groupId)
+		FinalizerGroup& getOrCreateFinalizerGroupAtomically(size_t groupId)
 		{
+			std::lock_guard<std::mutex> lock(mFinalizersMutex);
 			std::unique_ptr<FinalizerGroup>& groupPtr = mFinalizers[groupId];
+
 			if (!groupPtr)
 			{
 				groupPtr = std::make_unique<FinalizerGroup>();
@@ -276,13 +245,12 @@ namespace RaccoonEcs
 			return *groupPtr;
 		}
 
-		void processAndFinalizeOneTask(size_t groupId, Task& currentTask, std::unique_lock<std::mutex>& lock)
+		void processAndFinalizeOneTask(size_t groupId, Task& currentTask)
 		{
-			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(currentTask.groupId);
 
-			lock.unlock();
+			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroupAtomically(currentTask.groupId);
+
 			std::any result = currentTask.taskFn();
-			lock.lock();
 
 			if (currentTask.groupId == groupId)
 			{
@@ -295,15 +263,14 @@ namespace RaccoonEcs
 		}
 
 	private:
-		std::condition_variable mFinalizersChanged;
-
-		std::mutex mDataMutex;
 		std::atomic_bool mReadyToShutdown = false;
 		moodycamel::ConcurrentQueue<Task> mTasksStack;
+
+		std::mutex mFinalizersMutex;
 		std::unordered_map<size_t, std::unique_ptr<FinalizerGroup>> mFinalizers;
 
 		std::vector<std::thread> mThreads;
-		std::function<void()> mThreadPreShutdownTask;
+		const std::function<void()> mThreadPreShutdownTask;
 
 		static inline thread_local size_t ThisThreadId = 0;
 	};
