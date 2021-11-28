@@ -88,8 +88,8 @@ namespace RaccoonEcs
 				std::lock_guard<std::mutex> l(mDataMutex);
 
 				FinalizerGroup& group = getOrCreateFinalizerGroup(groupId);
-				group.tasksNotStartedCount += tasks.size();
-				group.tasksNotFinalizedCount += tasks.size();
+				group.tasksNotStartedCount += static_cast<int>(tasks.size());
+				group.tasksNotFinalizedCount += static_cast<int>(tasks.size());
 
 				for (auto& task : tasks)
 				{
