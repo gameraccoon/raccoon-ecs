@@ -76,13 +76,15 @@ namespace RaccoonEcs
 
 				mTasksQueue.emplace_back(groupId, std::forward<TaskFnT>(taskFn), std::forward<FinalizeFnT>(finalizeFn));
 			}
-			mTasksOrFinalizersChanged.notify_all();
+			mTasksOrFinalizersChanged.notify_one();
 		}
 
 		template<typename TaskFnT, typename FinalizeFnT>
 		void executeTasks(std::vector<std::pair<TaskFnT, FinalizeFnT>>&& tasks, size_t groupId = 0)
 		{
 			RACCOON_ECS_ASSERT(!mThreads.empty(), "No threads to execute the task");
+
+			const size_t tasksCount = tasks.size();
 
 			{
 				std::lock_guard<std::mutex> l(mDataMutex);
@@ -96,7 +98,18 @@ namespace RaccoonEcs
 					mTasksQueue.emplace_back(groupId, std::move(task.first), std::move(task.second));
 				}
 			}
-			mTasksOrFinalizersChanged.notify_all();
+
+			if (tasksCount >= mThreads.size())
+			{
+				mTasksOrFinalizersChanged.notify_all();
+			}
+			else
+			{
+				for (size_t i = 0; i < tasksCount; ++i)
+				{
+					mTasksOrFinalizersChanged.notify_one();
+				}
+			}
 		}
 
 		/**
