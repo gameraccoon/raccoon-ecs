@@ -3,6 +3,7 @@
 #include <any>
 #include <condition_variable>
 #include <functional>
+#include <list>
 #include <thread>
 #include <vector>
 
@@ -29,7 +30,11 @@ namespace RaccoonEcs
 
 		void shutdown()
 		{
-			mReadyToShutdown.store(true, std::memory_order::release);
+			{
+				std::lock_guard l(mDataMutex);
+				mReadyToShutdown = true;
+			}
+			mWorkerThreadWakeUp.notify_all();
 
 			for (auto& thread : mThreads)
 			{
@@ -64,10 +69,14 @@ namespace RaccoonEcs
 		{
 			RACCOON_ECS_ASSERT(!mThreads.empty(), "No threads to execute the task");
 
-			FinalizerGroup& group = getOrCreateFinalizerGroupAtomically(groupId);
-			++group.tasksNotFinalizedCount;
+			{
+				std::lock_guard<std::mutex> lock(mDataMutex);
+				FinalizerGroup& group = getOrCreateFinalizerGroup(groupId);
+				++group.tasksNotFinalizedCount;
 
-			mTasksQueue.enqueue_emplace(groupId, std::forward<TaskFnT>(taskFn), std::forward<FinalizeFnT>(finalizeFn));
+				mTasksQueue.emplace_back(groupId, std::forward<TaskFnT>(taskFn), std::forward<FinalizeFnT>(finalizeFn));
+			}
+			mWorkerThreadWakeUp.notify_one();
 		}
 
 		template<typename TaskFnT, typename FinalizeFnT>
@@ -75,13 +84,31 @@ namespace RaccoonEcs
 		{
 			RACCOON_ECS_ASSERT(!mThreads.empty(), "No threads to execute the task");
 
-			FinalizerGroup& group = getOrCreateFinalizerGroupAtomically(groupId);
+			const size_t tasksSize = tasks.size();
 
-			group.tasksNotFinalizedCount += tasks.size();
-
-			for (auto& task : tasks)
 			{
-				mTasksQueue.enqueue_emplace(groupId, std::move(task.first), std::move(task.second));
+				std::lock_guard l(mDataMutex);
+
+				FinalizerGroup& group = getOrCreateFinalizerGroup(groupId);
+
+				group.tasksNotFinalizedCount += tasks.size();
+
+				for (auto& task : tasks)
+				{
+					mTasksQueue.emplace_back(groupId, std::move(task.first), std::move(task.second));
+				}
+			}
+
+			if (tasksSize >= mThreads.size())
+			{
+				mWorkerThreadWakeUp.notify_all();
+			}
+			else
+			{
+				for (size_t i = 0; i < tasksSize; ++i)
+				{
+					mWorkerThreadWakeUp.notify_one();
+				}
 			}
 		}
 
@@ -91,7 +118,9 @@ namespace RaccoonEcs
 		 */
 		void finalizeTasks(size_t groupId = 0)
 		{
-			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroupAtomically(groupId);
+			std::unique_lock lock(mDataMutex);
+			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(groupId);
+			lock.unlock();
 
 			finalizeTaskForGroup(finalizerGroup);
 		}
@@ -101,7 +130,9 @@ namespace RaccoonEcs
 			std::vector<Finalizer> finalizersToExecute(24);
 			Task currentTask;
 
-			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroupAtomically(groupId);
+			std::unique_lock lock(mDataMutex);
+			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(groupId);
+			lock.unlock();
 
 			while(finalizerGroup.tasksNotFinalizedCount.load(std::memory_order::acquire) > 0)
 			{
@@ -109,14 +140,22 @@ namespace RaccoonEcs
 				{
 					finalizerGroup.tasksNotFinalizedCount -= count;
 					finalizeReadyTasks(finalizersToExecute, count);
+					continue;
 				}
-				else if (mTasksQueue.try_dequeue(currentTask))
+
+				lock.lock();
+				if (!mTasksQueue.empty())
 				{
-					processAndFinalizeOneTask(groupId, currentTask);
+					currentTask = std::move(mTasksQueue.front());
+					mTasksQueue.pop_front();
+					FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(currentTask.groupId);
+					lock.unlock();
+
+					processAndFinalizeOneTask(groupId, finalizerGroup, currentTask);
 				}
 				else
 				{
-					std::this_thread::yield();
+					lock.unlock();
 				}
 			}
 		}
@@ -164,18 +203,24 @@ namespace RaccoonEcs
 		{
 			Task currentTask;
 
-			while(!mReadyToShutdown.load(std::memory_order::acquire))
+			while(true)
 			{
-				if (mTasksQueue.try_dequeue(currentTask))
 				{
-					std::any result = currentTask.taskFn();
+					std::unique_lock lock(mDataMutex);
+					mWorkerThreadWakeUp.wait(lock, [&]{ return mReadyToShutdown || !mTasksQueue.empty(); });
 
-					taskPostProcess(currentTask, std::move(result));
+					if (mReadyToShutdown)
+					{
+						break;
+					}
+
+					currentTask = std::move(mTasksQueue.front());
+					mTasksQueue.pop_front();
 				}
-				else
-				{
-					std::this_thread::yield();
-				}
+
+				std::any result = currentTask.taskFn();
+
+				taskPostProcess(currentTask, std::move(result));
 			}
 
 			if (mThreadPreShutdownTask)
@@ -186,15 +231,17 @@ namespace RaccoonEcs
 
 		void taskPostProcess(Task& currentTask, std::any&& result)
 		{
+			std::unique_lock lock(mDataMutex);
+			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroup(currentTask.groupId);
+			lock.unlock();
+
 			if (currentTask.finalizeFn)
 			{
-				FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroupAtomically(currentTask.groupId);
 				finalizerGroup.readyFinalizers.enqueue_emplace(std::move(currentTask.finalizeFn), std::move(result));
 			}
 			else
 			{
 				size_t tasksLeftCount = 0;
-				FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroupAtomically(currentTask.groupId);
 				tasksLeftCount = --finalizerGroup.tasksNotFinalizedCount;
 
 				if (tasksLeftCount <= 0)
@@ -233,9 +280,8 @@ namespace RaccoonEcs
 			}
 		}
 
-		FinalizerGroup& getOrCreateFinalizerGroupAtomically(size_t groupId)
+		FinalizerGroup& getOrCreateFinalizerGroup(size_t groupId)
 		{
-			std::lock_guard<std::mutex> lock(mFinalizersMutex);
 			std::unique_ptr<FinalizerGroup>& groupPtr = mFinalizers[groupId];
 
 			if (!groupPtr)
@@ -245,11 +291,8 @@ namespace RaccoonEcs
 			return *groupPtr;
 		}
 
-		void processAndFinalizeOneTask(size_t groupId, Task& currentTask)
+		void processAndFinalizeOneTask(size_t groupId, FinalizerGroup& finalizerGroup, Task& currentTask)
 		{
-
-			FinalizerGroup& finalizerGroup = getOrCreateFinalizerGroupAtomically(currentTask.groupId);
-
 			std::any result = currentTask.taskFn();
 
 			if (currentTask.groupId == groupId)
@@ -263,14 +306,15 @@ namespace RaccoonEcs
 		}
 
 	private:
-		std::atomic_bool mReadyToShutdown = false;
-		moodycamel::ConcurrentQueue<Task> mTasksQueue;
-
-		std::mutex mFinalizersMutex;
+		std::mutex mDataMutex;
+		bool mReadyToShutdown = false;
+		std::list<Task> mTasksQueue;
 		std::unordered_map<size_t, std::unique_ptr<FinalizerGroup>> mFinalizers;
 
 		std::vector<std::thread> mThreads;
 		const std::function<void()> mThreadPreShutdownTask;
+
+		std::condition_variable mWorkerThreadWakeUp;
 
 		static inline thread_local size_t ThisThreadId = 0;
 	};
