@@ -65,7 +65,7 @@ namespace RaccoonEcs
 		 * Can be safely called during a finalizeFn of another task
 		 */
 		template<typename TaskFnT, typename FinalizeFnT>
-		void executeTask(TaskFnT&& taskFn, FinalizeFnT&& finalizeFn, size_t groupId = 0)
+		void executeTask(TaskFnT&& taskFn, FinalizeFnT&& finalizeFn, size_t groupId = 0, bool wakeUpThread = true)
 		{
 			RACCOON_ECS_ASSERT(!mThreads.empty(), "No threads to execute the task");
 
@@ -76,15 +76,19 @@ namespace RaccoonEcs
 
 				mTasksQueue.emplace_back(groupId, std::forward<TaskFnT>(taskFn), std::forward<FinalizeFnT>(finalizeFn));
 			}
-			mWorkerThreadWakeUp.notify_one();
+
+			if (wakeUpThread)
+			{
+				mWorkerThreadWakeUp.notify_one();
+			}
 		}
 
 		template<typename TaskFnT, typename FinalizeFnT>
-		void executeTasks(std::vector<std::pair<TaskFnT, FinalizeFnT>>&& tasks, size_t groupId = 0)
+		void executeTasks(std::vector<std::pair<TaskFnT, FinalizeFnT>>&& tasks, size_t groupId = 0, size_t threadsToWakeUp = std::numeric_limits<size_t>::max())
 		{
 			RACCOON_ECS_ASSERT(!mThreads.empty(), "No threads to execute the task");
 
-			const size_t tasksSize = tasks.size();
+			threadsToWakeUp = std::max(tasks.size(), threadsToWakeUp);
 
 			{
 				std::lock_guard l(mDataMutex);
@@ -99,13 +103,13 @@ namespace RaccoonEcs
 				}
 			}
 
-			if (tasksSize >= mThreads.size())
+			if (threadsToWakeUp >= mThreads.size())
 			{
 				mWorkerThreadWakeUp.notify_all();
 			}
 			else
 			{
-				for (size_t i = 0; i < tasksSize; ++i)
+				for (size_t i = 0; i < threadsToWakeUp; ++i)
 				{
 					mWorkerThreadWakeUp.notify_one();
 				}
