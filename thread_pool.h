@@ -95,7 +95,7 @@ namespace RaccoonEcs
 
 				FinalizerGroup& group = getOrCreateFinalizerGroup(groupId);
 
-				group.tasksNotFinalizedCount += tasks.size();
+				group.tasksNotFinalizedCount += static_cast<int>(tasks.size());
 
 				for (auto& task : tasks)
 				{

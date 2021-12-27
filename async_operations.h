@@ -4,6 +4,7 @@
 #include <tuple>
 
 #include "entity.h"
+#include "msvc_fix.h"
 
 namespace RaccoonEcs
 {
@@ -22,7 +23,7 @@ namespace RaccoonEcs
 		template<typename AsyncEntityManager>
 		auto& getSync(AsyncEntityManager& asyncEntityManager) const
 		{
-			return asyncEntityManager.template mSingleThreadedManagerRef;
+			return asyncEntityManager.TEMPLATE_MSVC_FIX mSingleThreadedManagerRef;
 		}
 	};
 
@@ -169,7 +170,7 @@ namespace RaccoonEcs
 		template<typename EntityManagerType>
 		Entity addEntity(EntityManagerType& entityManager) const
 		{
-			return this->getSync(entityManager).template addEntity();
+			return this->getSync(entityManager).TEMPLATE_MSVC_FIX addEntity();
 		}
 
 	protected:
@@ -187,7 +188,7 @@ namespace RaccoonEcs
 		template<typename EntityManagerType>
 		void removeEntity(EntityManagerType& entityManager, Entity entity) const
 		{
-			this->getSync(entityManager).template removeEntity(entity);
+			this->getSync(entityManager).TEMPLATE_MSVC_FIX removeEntity(entity);
 		}
 
 	protected:
@@ -205,7 +206,7 @@ namespace RaccoonEcs
 		template<typename EntityManagerType>
 		void transferEntity(EntityManagerType& source, EntityManagerType& target, Entity entity) const
 		{
-			this->getSync(source).template transferEntityTo(getSync(target), entity);
+			this->getSync(source).TEMPLATE_MSVC_FIX transferEntityTo(getSync(target), entity);
 		}
 
 	protected:
@@ -223,7 +224,7 @@ namespace RaccoonEcs
 		template<typename EntityManagerType>
 		void executeScheduledActions(EntityManagerType& entityManager) const
 		{
-			this->getSync(entityManager).template executeScheduledActions();
+			this->getSync(entityManager).TEMPLATE_MSVC_FIX executeScheduledActions();
 		}
 
 	protected:

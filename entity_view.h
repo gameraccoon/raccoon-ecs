@@ -3,6 +3,7 @@
 #include "entity.h"
 #include "entity_manager.h"
 #include "async_entity_manager.h"
+#include "msvc_fix.h"
 
 namespace RaccoonEcs
 {
@@ -78,7 +79,7 @@ namespace RaccoonEcs
 		template<typename Operation>
 		auto* addComponent(const Operation& operation)
 		{
-			return operation.template addComponent(mManager, mEntity);
+			return operation.TEMPLATE_MSVC_FIX addComponent(mManager, mEntity);
 		}
 
 		template<typename Operation>
@@ -90,19 +91,19 @@ namespace RaccoonEcs
 		template<typename Operation>
 		auto getComponents(const Operation& operation)
 		{
-			return operation.template getEntityComponents(mManager, mEntity);
+			return operation.TEMPLATE_MSVC_FIX getEntityComponents(mManager, mEntity);
 		}
 
 		template<typename Operation>
 		auto* scheduleAddComponent(const Operation& operation)
 		{
-			return operation.template scheduleAddComponent(mManager, mEntity);
+			return operation.TEMPLATE_MSVC_FIX scheduleAddComponent(mManager, mEntity);
 		}
 
 		template<typename Operation>
 		void scheduleRemoveComponent(const Operation& operation)
 		{
-			operation.template scheduleRemoveComponent(mManager, mEntity);
+			operation.TEMPLATE_MSVC_FIX scheduleRemoveComponent(mManager, mEntity);
 		}
 
 		[[nodiscard]] Entity getEntity() const
