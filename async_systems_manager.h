@@ -6,19 +6,26 @@
 #include <vector>
 
 #include "async_operations.h"
+#include "async_system.h"
 #include "error_handling.h"
 #include "thread_pool.h"
-#include "system.h"
 #include "system_dependencies.h"
+#include "async_entity_manager.h"
+#include "component_set_holder.h"
 
 namespace RaccoonEcs
 {
 	/**
 	 * Manager for async game systems
 	 */
-	template<typename ComponentTypeId>
+	template<typename ComponentTypeId, typename EntityManagerKey = void>
 	class AsyncSystemsManager
 	{
+	public:
+		using SystemT = AsyncSystemBase<ComponentTypeId, EntityManagerKey>;
+		using ScheduledOperations = ScheduledOperationsImpl<ComponentTypeId, EntityManagerKey>;
+		using OptionalScheduledOperations = OptionalScheduledOperationsImpl<ComponentTypeId, EntityManagerKey>;
+
 	public:
 		AsyncSystemsManager()
 			: mOwnThreadPool(new ThreadPool())
@@ -33,6 +40,18 @@ namespace RaccoonEcs
 			: mThreadPool(externalThreadPool)
 		{}
 
+		template <typename Fn>
+		void setGetEntityManagerFn(Fn&& newFn)
+		{
+			mGetEntityManagerFn = std::forward<Fn>(newFn);
+		}
+
+		template <typename Fn>
+		void setGetComponentSetHolderFn(Fn&& newFn)
+		{
+			mGetComponentSetHolder = std::forward<Fn>(newFn);
+		}
+
 		template <typename SystemType, typename... ComponentOperations, typename... Args>
 		void registerSystem(
 			SystemDependencies&& dependencies,
@@ -44,6 +63,10 @@ namespace RaccoonEcs
 			mSystemDependenciesData.emplace_back(SystemType::GetSystemId(), std::move(dependencies));
 
 			(registerComponentDependencies<SystemType, ComponentOperations>(mSystemDependenciesData.back()), ...);
+
+#ifdef RACCOON_ECS_DEBUG_CHECKS_ENABLED
+			checkDependenciesCompatibility(mSystemDependenciesData.back());
+#endif // RACCOON_ECS_DEBUG_CHECKS_ENABLED
 
 			mSystems.emplace_back(new SystemType(ComponentOperations()..., std::forward<Args>(args)...));
 			mSystemIds.push_back(SystemType::GetSystemId());
@@ -69,7 +92,7 @@ namespace RaccoonEcs
 
 		void initResources()
 		{
-			for (std::unique_ptr<System>& system : mSystems)
+			for (std::unique_ptr<SystemT>& system : mSystems)
 			{
 				system->initResources();
 			}
@@ -77,7 +100,7 @@ namespace RaccoonEcs
 
 		void shutdown()
 		{
-			for (std::unique_ptr<System>& system : mSystems)
+			for (std::unique_ptr<SystemT>& system : mSystems)
 			{
 				system->shutdown();
 			}
@@ -124,7 +147,6 @@ namespace RaccoonEcs
 			std::vector<ComponentTypeId> componentsToRead;
 			std::vector<ComponentTypeId> componentsToWrite;
 			bool needsSynchronizationAfter = false;
-			bool filtersEntities = false;
 			bool exclusiveGlobalAccess = false;
 		};
 
@@ -153,60 +175,36 @@ namespace RaccoonEcs
 		{
 			pushBackUnique(dependenciesData.componentsToWrite, Component::GetTypeId());
 			dependenciesData.needsSynchronizationAfter = true;
-			dependenciesData.exclusiveGlobalAccess = true; // we need it for now until we do proper "synchronization after"
 		}
 
 		template<typename SystemType, typename Component>
 		static void registerComponentRemover(const ComponentRemover<Component>&, SystemDependencyInnerData& dependenciesData)
 		{
 			dependenciesData.needsSynchronizationAfter = true;
-			dependenciesData.exclusiveGlobalAccess = true; // we need it for now until we do proper "synchronization after"
-		}
-
-		template<typename SystemType, typename Component>
-		static void registerComponentToSelectEntity(SystemDependencyInnerData& /*dependenciesData*/)
-		{
-			// nothing to do here, selecting entities doesn't affect components
-		}
-
-		template<typename SystemType, typename... Components>
-		static void registerEntitySelector(const EntitySelector<Components...>&, SystemDependencyInnerData& dependenciesData)
-		{
-			(registerComponentToSelectEntity<SystemType, Components>(dependenciesData), ...);
 		}
 
 		template<typename SystemType>
 		static void registerEntityAdder(SystemDependencyInnerData& dependenciesData)
 		{
 			dependenciesData.needsSynchronizationAfter = true;
-			dependenciesData.exclusiveGlobalAccess = true; // we need it for now until we do proper "synchronization after"
 		}
 
 		template<typename SystemType>
 		static void registerEntityRemover(SystemDependencyInnerData& dependenciesData)
 		{
 			dependenciesData.needsSynchronizationAfter = true;
-			dependenciesData.exclusiveGlobalAccess = true; // we need it for now until we do proper "synchronization after"
 		}
 
 		template<typename SystemType>
 		static void registerEntityTransferer(SystemDependencyInnerData& dependenciesData)
 		{
 			dependenciesData.needsSynchronizationAfter = true;
-			dependenciesData.exclusiveGlobalAccess = true; // we need it for now until we do proper "synchronization after"
-		}
-
-		template<typename SystemType>
-		static void registerScheduledActionsExecutor(SystemDependencyInnerData& dependenciesData)
-		{
-			dependenciesData.exclusiveGlobalAccess = true;
 		}
 
 		template<typename SystemType>
 		static void registerInnerDataAccessor(SystemDependencyInnerData& dependenciesData)
 		{
 			dependenciesData.exclusiveGlobalAccess = true;
-			dependenciesData.needsSynchronizationAfter = true;
 		}
 
 		template<template<typename...> class Template, typename... Type>
@@ -230,10 +228,6 @@ namespace RaccoonEcs
 			{
 				registerComponentRemover<SystemType>(AsyncOperation{}, dependenciesData);
 			}
-			else if constexpr (IsBaseOfInstantiation<EntitySelector, AsyncOperation>::value)
-			{
-				registerEntitySelector<SystemType>(AsyncOperation{}, dependenciesData);
-			}
 			else if constexpr (std::is_same<EntityAdder, AsyncOperation>::value)
 			{
 				registerEntityAdder<SystemType>(dependenciesData);
@@ -245,10 +239,6 @@ namespace RaccoonEcs
 			else if constexpr (std::is_same<EntityTransferer, AsyncOperation>::value)
 			{
 				registerEntityTransferer<SystemType>(dependenciesData);
-			}
-			else if constexpr (std::is_same<ScheduledActionsExecutor, AsyncOperation>::value)
-			{
-				registerScheduledActionsExecutor<SystemType>(dependenciesData);
 			}
 			else if constexpr (std::is_same<InnerDataAccessor, AsyncOperation>::value)
 			{
@@ -334,6 +324,20 @@ namespace RaccoonEcs
 
 		void trySpawnNewSystemTasks(std::unique_lock<std::mutex>& lock)
 		{
+			if (!mScheduledOperations.empty())
+			{
+				if (!mCurrentFrameDependencies->hasSystemsRunning())
+				{
+					// no systems are running, this is the safe time to execute what is scheduled
+					executeScheduledOperations();
+				}
+				else
+				{
+					// wait for systems to finish and execute scheduled ops before starting something new
+					return;
+				}
+			}
+
 			std::vector<size_t> systemsToRun = mCurrentFrameDependencies->getNextSystemsToRun();
 
 			// schedule tasks that exceed one (that we run below)
@@ -344,10 +348,24 @@ namespace RaccoonEcs
 				mThreadPool.executeTask(
 					[this, systemIdx]
 					{
-						mSystems[systemIdx]->update();
+						OptionalScheduledOperations scheduledOps;
+						if (mSystemDependenciesData[systemIdx].needsSynchronizationAfter)
+						{
+							scheduledOps = mSystems[systemIdx]->updateAndSchedule();
+						}
+						else
+						{
+							mSystems[systemIdx]->update();
+						}
 
 						{
 							std::unique_lock lock(mCurrentFrameDependenciesMutex);
+
+							if (scheduledOps.has_value())
+							{
+								mScheduledOperations.push_back(std::move(*scheduledOps));
+							}
+
 							mCurrentFrameDependencies->finishSystem(systemIdx);
 							trySpawnNewSystemTasks(lock);
 						}
@@ -363,9 +381,23 @@ namespace RaccoonEcs
 				const size_t systemIdx = systemsToRun[0];
 				mCurrentFrameDependencies->runSystem(systemIdx);
 
-				lock.unlock();
-				mSystems[systemIdx]->update();
-				lock.lock();
+				if (mSystemDependenciesData[systemIdx].needsSynchronizationAfter)
+				{
+					lock.unlock();
+					OptionalScheduledOperations scheduledOps = mSystems[systemIdx]->updateAndSchedule();
+					lock.lock();
+
+					if (scheduledOps.has_value())
+					{
+						mScheduledOperations.push_back(std::move(*scheduledOps));
+					}
+				}
+				else
+				{
+					lock.unlock();
+					mSystems[systemIdx]->update();
+					lock.lock();
+				}
 
 				mCurrentFrameDependencies->finishSystem(systemIdx);
 
@@ -373,20 +405,83 @@ namespace RaccoonEcs
 			}
 		}
 
+#ifdef RACCOON_ECS_DEBUG_CHECKS_ENABLED
+		void checkDependenciesCompatibility(SystemDependencyInnerData& dependencies)
+		{
+			if (dependencies.exclusiveGlobalAccess)
+			{
+				if (!dependencies.componentsToRead.empty()
+					|| !dependencies.componentsToWrite.empty()
+					|| dependencies.needsSynchronizationAfter)
+				{
+					// it doesn't make sense to have exclusive access and specific operations at the same time
+					// it probably will work together but is likely a flaw in the logic
+					RACCOON_ECS_ERROR("A system have exclusive access and other operations at the same time. It's better to use only exclusive access to avoid confusion");
+				}
+			}
+		}
+#endif // RACCOON_ECS_DEBUG_CHECKS_ENABLED
+
+		void executeScheduledOperations()
+		{
+			for (ScheduledOperations& operations : mScheduledOperations)
+			{
+				for (auto& [key, entities] : operations.entitiesToAdd)
+				{
+					EntityManagerImpl<ComponentTypeId>& entityManager = mGetEntityManagerFn(key).mSingleThreadedManagerRef;
+					for (Entity entity : entities)
+					{
+						entityManager.addExistingEntityUnsafe(entity);
+					}
+				}
+
+				for (auto& [key, data] : operations.componentsToAdd)
+				{
+					EntityManagerImpl<ComponentTypeId>& entityManager = mGetEntityManagerFn(key).mSingleThreadedManagerRef;
+					for (typename ScheduledOperations::ComponentAddData componentAddData : data)
+					{
+						entityManager.addComponent(componentAddData.entity, componentAddData.component, componentAddData.componentTypeId);
+					}
+				}
+
+				for (auto& [key, data] : operations.componentsToRemove)
+				{
+					EntityManagerImpl<ComponentTypeId>& entityManager = mGetEntityManagerFn(key).mSingleThreadedManagerRef;
+					for (typename ScheduledOperations::ComponentRemoveData componentRemoveData : data)
+					{
+						entityManager.removeComponent(componentRemoveData.entity, componentRemoveData.componentTypeId);
+					}
+				}
+
+				for (auto& [key, data] : operations.entitiesToRemove)
+				{
+					EntityManagerImpl<ComponentTypeId>& entityManager = mGetEntityManagerFn(key).mSingleThreadedManagerRef;
+					for (Entity entity : data)
+					{
+						entityManager.removeEntity(entity);
+					}
+				}
+			}
+			mScheduledOperations.clear();
+		}
+
 	private:
 		// containers that are immutable after calling init()
-		std::vector<std::unique_ptr<System>> mSystems;
+		std::vector<std::unique_ptr<SystemT>> mSystems;
 		std::vector<std::string> mSystemIds;
 		std::vector<SystemDependencyInnerData> mSystemDependenciesData;
 		std::unordered_map<std::string, size_t> mSystemIdxById;
 		DependencyGraph mDependencyGraph;
 		std::unique_ptr<ThreadPool> mOwnThreadPool;
 		ThreadPool& mThreadPool;
+		std::function<AsyncEntityManagerImpl<ComponentTypeId>&(const EntityManagerKey&)> mGetEntityManagerFn;
+		std::function<ComponentSetHolderImpl<ComponentTypeId>&(const EntityManagerKey&)> mGetComponentSetHolder;
 
 		// mutable data
 		std::unique_ptr<SystemDependencyTracer> mCurrentFrameDependencies;
 		std::mutex mCurrentFrameDependenciesMutex;
 		std::condition_variable mCurrentFrameDependenciesUpdated;
+		std::vector<ScheduledOperations> mScheduledOperations;
 	};
 
 } // namespace RaccoonEcs

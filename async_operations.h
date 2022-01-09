@@ -4,7 +4,9 @@
 #include <tuple>
 
 #include "entity.h"
+#include "async_system.h"
 #include "msvc_fix.h"
+#include "async_scheduled_operations.h"
 
 namespace RaccoonEcs
 {
@@ -32,7 +34,7 @@ namespace RaccoonEcs
 	template<typename... Components>
 	class ComponentFilter : public BaseAsyncOperation
 	{
-		template<typename T>
+		template<typename T, typename K>
 		friend class AsyncSystemsManager;
 
 	public:
@@ -81,22 +83,18 @@ namespace RaccoonEcs
 	template<typename Component>
 	class ComponentAdder : public ComponentFilter<Component>
 	{
-		template<typename T>
+		template<typename T, typename K>
 		friend class AsyncSystemsManager;
 
 	public:
 		ComponentAdder(const InnerDataAccessor&) {}
 
-		template<typename EntityManagerType>
-		Component* addComponent(EntityManagerType& entityManager, Entity entity) const
+		template<typename EntityManagerType, typename ComponentAddDataVector>
+		Component* addComponent(EntityManagerType& entityManager, ComponentAddDataVector& data, Entity entity) const
 		{
-			return this->getSync(entityManager).template addComponent<Component>(entity);
-		}
-
-		template<typename EntityManagerType>
-		Component* scheduleAddComponent(EntityManagerType& entityManager, Entity entity) const
-		{
-			return this->getSync(entityManager).template scheduleAddComponent<Component>(entity);
+			void* newComponent = this->getSync(entityManager).TEMPLATE_MSVC_FIX createUnmanagedComponentUnsafe(Component::GetTypeId());
+			data.TEMPLATE_MSVC_FIX emplace_back(entity, Component::GetTypeId(), newComponent);
+			return static_cast<Component*>(newComponent);
 		}
 
 		template<typename ComponentHolderType>
@@ -118,59 +116,36 @@ namespace RaccoonEcs
 	template<typename Component>
 	class ComponentRemover : public BaseAsyncOperation
 	{
-		template<typename T>
+		template<typename T, typename K>
 		friend class AsyncSystemsManager;
 
 	public:
 		ComponentRemover(const InnerDataAccessor&) {}
 
-		template<typename EntityManagerType>
-		void scheduleRemoveComponent(EntityManagerType& entityManager, Entity entity) const
+		template<typename ComponentRemoveDataVector>
+		void removeComponent(ComponentRemoveDataVector& data, Entity entity) const
 		{
-			this->getSync(entityManager).template scheduleRemoveComponent<Component>(entity);
-		}
-
-		template<typename EntityViewType>
-		void scheduleRemoveComponent(EntityViewType& entityView) const
-		{
-			entityView.template scheduleRemoveComponent<Component>();
+			data.TEMPLATE_MSVC_FIX emplace_back(entity, Component::GetTypeId());
 		}
 
 	protected:
 		ComponentRemover() = default;
 	};
 
-	template<typename Component>
-	class EntitySelector : public BaseAsyncOperation
-	{
-		template<typename T>
-		friend class AsyncSystemsManager;
-
-	public:
-		EntitySelector(const InnerDataAccessor&) {}
-
-		template<typename EntityManagerType>
-		bool doesEntityHaveComponent(EntityManagerType& entityManager, Entity entity)
-		{
-			return this->getSync(entityManager).template doesEntityHaveComponent<Component>(entity);
-		}
-
-	protected:
-		EntitySelector() = default;
-	};
-
 	class EntityAdder : public BaseAsyncOperation
 	{
-		template<typename T>
+		template<typename T, typename K>
 		friend class AsyncSystemsManager;
 
 	public:
 		EntityAdder(const InnerDataAccessor&) {}
 
-		template<typename EntityManagerType>
-		Entity addEntity(EntityManagerType& entityManager) const
+		template<typename EntityManagerType, typename EntityAddDataVector>
+		Entity addEntity(EntityManagerType& entityManager, EntityAddDataVector& data) const
 		{
-			return this->getSync(entityManager).TEMPLATE_MSVC_FIX addEntity();
+			Entity newEntity = entityManager.generateNewEntityUnsafe();
+			data.push_back(newEntity);
+			return newEntity;
 		}
 
 	protected:
@@ -179,16 +154,16 @@ namespace RaccoonEcs
 
 	class EntityRemover : public BaseAsyncOperation
 	{
-		template<typename T>
+		template<typename T, typename K>
 		friend class AsyncSystemsManager;
 
 	public:
 		EntityRemover(const InnerDataAccessor&) {}
 
-		template<typename EntityManagerType>
-		void removeEntity(EntityManagerType& entityManager, Entity entity) const
+		template<typename EntityRemoveDataVector>
+		void removeEntity(Entity entity, EntityRemoveDataVector& data) const
 		{
-			this->getSync(entityManager).TEMPLATE_MSVC_FIX removeEntity(entity);
+			data.push_back(entity);
 		}
 
 	protected:
@@ -197,7 +172,7 @@ namespace RaccoonEcs
 
 	class EntityTransferer : public BaseAsyncOperation
 	{
-		template<typename T>
+		template<typename T, typename K>
 		friend class AsyncSystemsManager;
 
 	public:
@@ -213,27 +188,9 @@ namespace RaccoonEcs
 		EntityTransferer() = default;
 	};
 
-	class ScheduledActionsExecutor : public BaseAsyncOperation
-	{
-		template<typename T>
-		friend class AsyncSystemsManager;
-
-	public:
-		ScheduledActionsExecutor(const InnerDataAccessor&) {}
-
-		template<typename EntityManagerType>
-		void executeScheduledActions(EntityManagerType& entityManager) const
-		{
-			this->getSync(entityManager).TEMPLATE_MSVC_FIX executeScheduledActions();
-		}
-
-	protected:
-		ScheduledActionsExecutor() = default;
-	};
-
 	class InnerDataAccessor : public BaseAsyncOperation
 	{
-		template<typename T>
+		template<typename T, typename K>
 		friend class AsyncSystemsManager;
 
 	public:

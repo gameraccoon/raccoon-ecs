@@ -281,6 +281,11 @@ namespace RaccoonEcs
 			);
 		}
 
+		bool hasSystemsRunning() const
+		{
+			return !mActiveSystems.empty();
+		}
+
 	private:
 		const DependencyGraph* mDependencyGraph;
 		std::vector<bool> mResolvedDependencies;

@@ -14,6 +14,9 @@ namespace RaccoonEcs
 	{
 		friend class BaseAsyncOperation;
 
+		template<typename C, typename K>
+		friend class AsyncSystemsManager;
+
 	public:
 		using EntityManager = EntityManagerImpl<ComponentTypeId>;
 
