@@ -36,7 +36,7 @@ namespace RaccoonEcs
 		static constexpr std::size_t PackIdx = Idx<Type, Types...>::value;
 	}
 
-	template <typename ComponentTypeId>
+	template <typename ComponentTypeId, typename ComponentFactory = ComponentFactoryImpl<ComponentTypeId>>
 	class EntityManagerImpl
 	{
 	public:
@@ -44,7 +44,6 @@ namespace RaccoonEcs
 		using TypedComponent = TypedComponentImpl<ComponentTypeId>;
 		using ConstTypedComponent = ConstTypedComponentImpl<ComponentTypeId>;
 		using ComponentMap = ComponentMapImpl<ComponentTypeId>;
-		using ComponentFactory = ComponentFactoryImpl<ComponentTypeId>;
 
 		using EntityIndex = size_t;
 
@@ -162,35 +161,6 @@ namespace RaccoonEcs
 		 * @brief Returns list of entities that are stored in this manager
 		 */
 		[[nodiscard]] const std::vector<Entity>& getEntities() const { return mEntities; }
-
-		/**
-		 * @brief Generates yet unused Entity. Should be used together with addExistingEntityUnsafe
-		 * @return Not yet used Entity
-		 *
-		 * Can produce collisions if between call to this function and call to tryInsertEntity
-		 * any work with entity happened that could produce new Entity registration
-		 */
-		[[nodiscard]] Entity generateNewEntityUnsafe()
-		{
-			return Entity(mEntityGenerator.generateNewEntityId());
-		}
-
-		/**
-		 * @brief Inserts an entity that was removed from an entity manager or created with generateNewEntityUnsafe
-		 * @param entity  The entity that need to be inserted
-		 *
-		 * Use cases: re-adding deleted entity by "undo" editor command, loading the game from save.
-		 */
-		void addExistingEntityUnsafe(Entity entity)
-		{
-			mEntityGenerator.registerEntityId(entity.getId());
-
-			const EntityIndex newEntityId = mEntities.size();
-			mEntities.push_back(entity);
-			mEntityIndexMap.emplace(entity.getId(), newEntityId);
-
-			onEntityAdded.broadcast();
-		}
 
 		/**
 		 * @brief Collects components that belongs to the given entity and returns them together with their types
@@ -683,17 +653,6 @@ namespace RaccoonEcs
 		}
 
 		/**
-		 * @brief Creates a component and returns an owning pointer for further addition to the manager
-		 *
-		 * The component should be added to this manager or freed through the same ComponentPool
-		 * where it was created, otherwise it will result in memory leak or UB
-		 */
-		[[nodiscard]] void* createUnmanagedComponentUnsafe(ComponentTypeId typeId)
-		{
-			return mComponentFactory.getCreationFn(typeId)();
-		}
-
-		/**
 		 * @brief Inits the index if it wasn't created
 		 *
 		 * This function is not necessary to call, indexes will be created automatically
@@ -704,6 +663,35 @@ namespace RaccoonEcs
 		void initIndex()
 		{
 			mIndexes.template getIndex<Components...>(mComponents);
+		}
+
+		/**
+		 * @brief Generates yet unused Entity. Should be used together with addExistingEntityUnsafe
+		 * @return Not yet used Entity
+		 *
+		 * Can produce collisions if between call to this function and call to tryInsertEntity
+		 * any work with entity happened that could produce new Entity registration
+		 */
+		[[nodiscard]] Entity generateNewEntityUnsafe()
+		{
+			return Entity(mEntityGenerator.generateNewEntityId());
+		}
+
+		/**
+		 * @brief Inserts an entity that was removed from an entity manager or created with generateNewEntityUnsafe
+		 * @param entity  The entity that need to be inserted
+		 *
+		 * Use cases: re-adding deleted entity by "undo" editor command, loading the game from save.
+		 */
+		void addExistingEntityUnsafe(Entity entity)
+		{
+			mEntityGenerator.registerEntityId(entity.getId());
+
+			const EntityIndex newEntityId = mEntities.size();
+			mEntities.push_back(entity);
+			mEntityIndexMap.emplace(entity.getId(), newEntityId);
+
+			onEntityAdded.broadcast();
 		}
 
 		/**

@@ -67,5 +67,7 @@ namespace RaccoonEcs
 
 	static_assert(sizeof(Entity) == 8, "Entity is too big");
 	static_assert(std::is_trivially_copyable<Entity>(), "Entity should be trivially copyable");
+	static_assert(std::is_trivially_destructible<Entity>(), "Entity should be trivially destructible");
 	static_assert(std::is_trivially_copyable<OptionalEntity>(), "OptionalEntity should be trivially copyable");
+	static_assert(std::is_trivially_destructible<OptionalEntity>(), "OptionalEntity should be trivially destructible");
 } // namespace RaccoonEcs

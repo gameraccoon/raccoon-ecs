@@ -13,13 +13,12 @@ namespace RaccoonEcs
 	/**
 	 * @brief This class can be used to store components specific for some non-entity object (e.g. for a World)
 	 */
-	template <typename ComponentTypeId>
+	template <typename ComponentTypeId, typename ComponentFactory = ComponentFactoryImpl<ComponentTypeId>>
 	class ComponentSetHolderImpl
 	{
 	public:
 		using TypedComponent = TypedComponentImpl<ComponentTypeId>;
 		using ConstTypedComponent = ConstTypedComponentImpl<ComponentTypeId>;
-		using ComponentFactory = ComponentFactoryImpl<ComponentTypeId>;
 
 		/**
 		 * @brief Constructs component set holder.

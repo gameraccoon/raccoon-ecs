@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <memory>
 #include <vector>
 
@@ -8,14 +7,10 @@
 
 namespace RaccoonEcs
 {
-	struct SystemsFrameTime
-	{
-		std::chrono::microseconds frameTime;
-		std::vector<std::chrono::microseconds> systemsTime;
-	};
-
 	/**
-	 * Manager for game systems
+	 * @brief Simple manager for game systems
+	 *
+	 * You don't have to use this class (e.g. if you want to run some systems in parallel)
 	 */
 	class SystemsManager
 	{
@@ -39,7 +34,7 @@ namespace RaccoonEcs
 		{
 			for (std::unique_ptr<System>& system : mSystems)
 			{
-				system->initResources();
+				system->init();
 			}
 		}
 

@@ -1,3 +1,0 @@
-[submodule "external/concurrentqueue"]
-	path = external/concurrentqueue
-	url = git@github.com:gameraccoon/concurrentqueue.git
