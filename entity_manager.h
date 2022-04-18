@@ -584,6 +584,18 @@ namespace RaccoonEcs
 		}
 
 		/**
+		 * @brief Returns amount of entities with matching components
+		 *
+		 * Note that this call can create an index for the requested components
+		 * (if such index didn't exist)
+		 */
+		template<typename... Components>
+		size_t getMatchingEntitiesCount()
+		{
+			return mIndexes.template getIndex<Components...>(mComponents).size();
+		}
+
+		/**
 		 * @brief Transfers the given entity together with its components to another manager
 		 * @param otherManager  The manager to which the entity will be transfer to
 		 * @param entity  The enitity that will be transfered
