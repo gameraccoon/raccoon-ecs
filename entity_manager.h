@@ -707,6 +707,9 @@ namespace RaccoonEcs
 			onEntityAdded.broadcast();
 		}
 
+		/**
+		 * @brief Creates new EntityManager containing copies of all stored entities and their components
+		 */
 		std::unique_ptr<EntityManager> clone() const
 		{
 			std::unique_ptr<EntityManager> result = std::make_unique<EntityManager>(mComponentFactory, mEntityGenerator);

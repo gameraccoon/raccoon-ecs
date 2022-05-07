@@ -3,6 +3,7 @@
 #include <map>
 #include <tuple>
 #include <vector>
+#include <memory>
 
 #include "component_factory.h"
 #include "delegates.h"
@@ -17,6 +18,7 @@ namespace RaccoonEcs
 	class ComponentSetHolderImpl
 	{
 	public:
+		using ComponentSetHolder = ComponentSetHolderImpl<ComponentTypeId, ComponentFactory>;
 		using TypedComponent = TypedComponentImpl<ComponentTypeId>;
 		using ConstTypedComponent = ConstTypedComponentImpl<ComponentTypeId>;
 
@@ -189,6 +191,20 @@ namespace RaccoonEcs
 				deleterFn(component.second);
 			}
 			mComponents.clear();
+		}
+
+		/**
+		 * @brief Creates new ComponentSetHolder containing copies of all stored components
+		 */
+		std::unique_ptr<ComponentSetHolder> clone() const
+		{
+			std::unique_ptr<ComponentSetHolder> result = std::make_unique<ComponentSetHolder>(mComponentFactory);
+			for (auto& [type, component] : mComponents)
+			{
+				const auto& cloneFn = mComponentFactory.getCloneFn(type);
+				result->mComponents.emplace(type, cloneFn(component));
+			}
+			return result;
 		}
 
 	private:
