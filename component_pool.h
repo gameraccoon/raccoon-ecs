@@ -45,7 +45,8 @@ namespace RaccoonEcs
 		ComponentPool(ComponentPool&&) = delete;
 		ComponentPool& operator=(ComponentPool&&) = delete;
 
-		void* acquireComponent()
+		template<typename... Args>
+		void* acquireComponent(Args... constructorArguments)
 		{
 			if (mNextFreeSlot == nullptr)
 			{
@@ -55,7 +56,7 @@ namespace RaccoonEcs
 			ComponentSlot* takenSlot = mNextFreeSlot;
 			mNextFreeSlot = takenSlot->nextFreeSlot;
 
-			return new (&takenSlot->component) ComponentType;
+			return new (&takenSlot->component) ComponentType(std::forward<Args>(constructorArguments)...);
 		}
 
 		void releaseComponent(void* component)

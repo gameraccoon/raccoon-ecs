@@ -4,6 +4,7 @@
 #include <ranges>
 #include <tuple>
 #include <unordered_map>
+#include <memory>
 
 #include "component_factory.h"
 #include "component_indexes.h"
@@ -704,6 +705,28 @@ namespace RaccoonEcs
 			mEntityIndexMap.emplace(entity.getId(), newEntityId);
 
 			onEntityAdded.broadcast();
+		}
+
+		std::unique_ptr<EntityManager> clone() const
+		{
+			std::unique_ptr<EntityManager> result = std::make_unique<EntityManager>(mComponentFactory, mEntityGenerator);
+			result->mEntities = mEntities;
+			result->mEntityIndexMap = mEntityIndexMap;
+
+			for (auto& componentVectorPair : mComponents)
+			{
+				std::vector<void*>& newComponents = result->mComponents.getOrCreateComponentVectorById(componentVectorPair.first);
+				const std::vector<void*>& originalComponents = componentVectorPair.second;
+				const size_t componentsCount = originalComponents.size();
+				newComponents.resize(componentsCount);
+				const auto cloneFn = mComponentFactory.getCloneFn(componentVectorPair.first);
+				for (size_t i = 0; i < componentsCount; ++i)
+				{
+					newComponents[i] = cloneFn(originalComponents[i]);
+				}
+			}
+
+			return result;
 		}
 
 		/**

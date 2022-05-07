@@ -16,6 +16,7 @@ namespace RaccoonEcs
 	public:
 		using CreationFn = std::function<void*()>;
 		using DeletionFn = std::function<void(void*)>;
+		using CloneFn = std::function<void*(void*)>;
 
 		ComponentFactoryImpl() = default;
 		ComponentFactoryImpl(ComponentFactoryImpl&) = delete;
@@ -38,8 +39,19 @@ namespace RaccoonEcs
 				return componentPoolRawPtr->acquireComponent();
 			};
 			mComponentDeleters[componentTypeId] = [componentPoolRawPtr](void* component){
-				if (component) {
-					return componentPoolRawPtr->releaseComponent(component);
+				if (component)
+				{
+					componentPoolRawPtr->releaseComponent(component);
+				}
+			};
+			mComponentCloners[componentTypeId] = [componentPoolRawPtr](void* component) -> void* {
+				if (component)
+				{
+					return componentPoolRawPtr->acquireComponent(std::ref(*static_cast<ComponentType*>(component)));
+				}
+				else
+				{
+					return nullptr;
 				}
 			};
 		}
@@ -61,6 +73,19 @@ namespace RaccoonEcs
 		{
 			const auto& it = mComponentDeleters.find(typeId);
 			if (it != mComponentDeleters.cend())
+			{
+				return it->second;
+			}
+
+			using std::to_string;
+			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + to_string(typeId) + "'");
+			return nullptr;
+		}
+
+		[[nodiscard]] CloneFn getCloneFn(ComponentTypeId typeId) const
+		{
+			const auto& it = mComponentCloners.find(typeId);
+			if (it != mComponentCloners.cend())
 			{
 				return it->second;
 			}
@@ -93,6 +118,7 @@ namespace RaccoonEcs
 	private:
 		std::unordered_map<ComponentTypeId, CreationFn> mComponentCreators;
 		std::unordered_map<ComponentTypeId, DeletionFn> mComponentDeleters;
+		std::unordered_map<ComponentTypeId, CloneFn> mComponentCloners;
 		std::vector<std::unique_ptr<ComponentPoolBase>> mComponentPools;
 	};
 
