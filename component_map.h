@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <unordered_map>
+#include <vector>
 
 #include "error_handling.h"
 
@@ -11,8 +12,8 @@ namespace RaccoonEcs
 	class ComponentMapImpl
 	{
 	public:
-		using Iterator = std::unordered_map<ComponentTypeId, std::vector<void*>>::iterator;
-		using ConstIterator = std::unordered_map<ComponentTypeId, std::vector<void*>>::const_iterator;
+		using Iterator = typename std::unordered_map<ComponentTypeId, std::vector<void*>>::iterator;
+		using ConstIterator = typename std::unordered_map<ComponentTypeId, std::vector<void*>>::const_iterator;
 
 	public:
 		ComponentMapImpl() = default;
