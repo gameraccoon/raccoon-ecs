@@ -193,6 +193,7 @@ namespace RaccoonEcs
 			mComponents.clear();
 		}
 
+#ifdef RACOON_ECS_COPYABLE_COMPONENTS
 		/**
 		 * @brief Creates new ComponentSetHolder containing copies of all stored components
 		 */
@@ -206,6 +207,7 @@ namespace RaccoonEcs
 			}
 			return result;
 		}
+#endif // RACOON_ECS_COPYABLE_COMPONENTS
 
 	private:
 		template<typename Component>

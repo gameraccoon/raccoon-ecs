@@ -707,6 +707,7 @@ namespace RaccoonEcs
 			onEntityAdded.broadcast();
 		}
 
+#ifdef RACOON_ECS_COPYABLE_COMPONENTS
 		/**
 		 * @brief Creates new EntityManager containing copies of all stored entities and their components
 		 */
@@ -731,6 +732,7 @@ namespace RaccoonEcs
 
 			return result;
 		}
+#endif // RACOON_ECS_COPYABLE_COMPONENTS
 
 		/**
 		 * @brief Shrinks the vectors of components to elliminate empty elements at the end, and
