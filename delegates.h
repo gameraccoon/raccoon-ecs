@@ -115,6 +115,7 @@ namespace RaccoonEcs
 			mFunctions = std::move(other.mFunctions);
 			mNextFunctionId = other.mNextFunctionId;
 			other.clear();
+			return *this;
 		}
 
 		Delegates::Handle bind(FunctionType fn)

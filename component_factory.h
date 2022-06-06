@@ -44,7 +44,7 @@ namespace RaccoonEcs
 					componentPoolRawPtr->releaseComponent(component);
 				}
 			};
-#ifdef RACOON_ECS_COPYABLE_COMPONENTS
+#ifdef RACCOON_ECS_COPYABLE_COMPONENTS
 			mComponentCloners[componentTypeId] = [componentPoolRawPtr](void* component) -> void* {
 				if (component)
 				{
@@ -55,7 +55,7 @@ namespace RaccoonEcs
 					return nullptr;
 				}
 			};
-#endif // RACOON_ECS_COPYABLE_COMPONENTS
+#endif // RACCOON_ECS_COPYABLE_COMPONENTS
 		}
 
 		[[nodiscard]] CreationFn getCreationFn(ComponentTypeId typeId) const
@@ -84,7 +84,7 @@ namespace RaccoonEcs
 			return nullptr;
 		}
 
-#ifdef RACOON_ECS_COPYABLE_COMPONENTS
+#ifdef RACCOON_ECS_COPYABLE_COMPONENTS
 		[[nodiscard]] CloneFn getCloneFn(ComponentTypeId typeId) const
 		{
 			const auto& it = mComponentCloners.find(typeId);
@@ -97,7 +97,7 @@ namespace RaccoonEcs
 			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + to_string(typeId) + "'");
 			return nullptr;
 		}
-#endif // RACOON_ECS_COPYABLE_COMPONENTS
+#endif // RACCOON_ECS_COPYABLE_COMPONENTS
 
 		[[nodiscard]] void* createComponent(ComponentTypeId typeId) const
 		{
@@ -124,9 +124,9 @@ namespace RaccoonEcs
 
 		std::unordered_map<ComponentTypeId, CreationFn> mComponentCreators;
 		std::unordered_map<ComponentTypeId, DeletionFn> mComponentDeleters;
-#ifdef RACOON_ECS_COPYABLE_COMPONENTS
+#ifdef RACCOON_ECS_COPYABLE_COMPONENTS
 		std::unordered_map<ComponentTypeId, CloneFn> mComponentCloners;
-#endif // RACOON_ECS_COPYABLE_COMPONENTS
+#endif // RACCOON_ECS_COPYABLE_COMPONENTS
 	};
 
 } // namespace RaccoonEcs

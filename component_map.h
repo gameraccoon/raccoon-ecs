@@ -19,8 +19,8 @@ namespace RaccoonEcs
 		ComponentMapImpl() = default;
 		ComponentMapImpl(const ComponentMapImpl&) = delete;
 		ComponentMapImpl& operator=(const ComponentMapImpl&) = delete;
-		ComponentMapImpl(ComponentMapImpl&&) = delete;
-		ComponentMapImpl& operator=(ComponentMapImpl&&) = delete;
+		ComponentMapImpl(ComponentMapImpl&&) = default;
+		ComponentMapImpl& operator=(ComponentMapImpl&&) = default;
 
 		~ComponentMapImpl()
 		{

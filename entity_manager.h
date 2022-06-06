@@ -63,10 +63,18 @@ namespace RaccoonEcs
 			clear();
 		}
 
+#ifdef RACCOON_ECS_COPYABLE_COMPONENTS
+		EntityManagerImpl(const EntityManagerImpl& other)
+			: EntityManagerImpl(other.mComponentFactory, other.mEntityGenerator)
+		{
+			copyEntitiesFrom(other);
+		}
+#else
 		EntityManagerImpl(const EntityManagerImpl&) = delete;
+#endif // RACCOON_ECS_COPYABLE_COMPONENTS
 		EntityManagerImpl& operator=(const EntityManagerImpl&) = delete;
-		EntityManagerImpl(EntityManagerImpl&&) = delete;
-		EntityManagerImpl& operator=(EntityManagerImpl&&) = delete;
+		EntityManagerImpl(EntityManagerImpl&&) = default;
+		EntityManagerImpl& operator=(EntityManagerImpl&&) = default;
 
 		/**
 		 * @brief Generates a new unique entity and adds it to this manager
@@ -74,7 +82,7 @@ namespace RaccoonEcs
 		 */
 		Entity addEntity()
 		{
-			const Entity::EntityId id = mEntityGenerator.generateNewEntityId();
+			const Entity::EntityId id = mEntityGenerator.get().generateNewEntityId();
 			EntityIndex newEntityIndex = mEntities.size();
 			mEntities.emplace_back(id);
 			mEntityIndexMap.emplace(id, newEntityIndex);
@@ -121,7 +129,7 @@ namespace RaccoonEcs
 					if (void*& componentPtrRef = componentVector.second[oldEntityIdx])
 					{
 						// remove the element
-						auto deleterFn = mComponentFactory.getDeletionFn(componentVector.first);
+						auto deleterFn = mComponentFactory.get().getDeletionFn(componentVector.first);
 						deleterFn(componentPtrRef);
 						componentPtrRef = nullptr;
 					}
@@ -257,7 +265,7 @@ namespace RaccoonEcs
 		 */
 		void* addComponentByType(Entity entity, ComponentTypeId typeId)
 		{
-			const auto createFn = mComponentFactory.getCreationFn(typeId);
+			const auto createFn = mComponentFactory.get().getCreationFn(typeId);
 			void* component = createFn();
 			addComponent(entity, component, typeId);
 			return component;
@@ -315,7 +323,7 @@ namespace RaccoonEcs
 
 			if (entityIdx < componentsVector.size())
 			{
-				auto deleterFn = mComponentFactory.getDeletionFn(typeId);
+				auto deleterFn = mComponentFactory.get().getDeletionFn(typeId);
 				deleterFn(componentsVector[entityIdx]);
 				componentsVector[entityIdx] = nullptr;
 			}
@@ -337,7 +345,7 @@ namespace RaccoonEcs
 		ComponentType* scheduleAddComponent(Entity entity)
 		{
 			const ComponentTypeId componentTypeId = ComponentType::GetTypeId();
-			const auto createFn = mComponentFactory.getCreationFn(componentTypeId);
+			const auto createFn = mComponentFactory.get().getCreationFn(componentTypeId);
 			ComponentType* component = static_cast<ComponentType*>(createFn());
 			scheduleAddComponent(entity, component, componentTypeId);
 			return component;
@@ -687,7 +695,7 @@ namespace RaccoonEcs
 		 */
 		[[nodiscard]] Entity generateNewEntityUnsafe()
 		{
-			return Entity(mEntityGenerator.generateNewEntityId());
+			return Entity(mEntityGenerator.get().generateNewEntityId());
 		}
 
 		/**
@@ -698,7 +706,7 @@ namespace RaccoonEcs
 		 */
 		void addExistingEntityUnsafe(Entity entity)
 		{
-			mEntityGenerator.registerEntityId(entity.getId());
+			mEntityGenerator.get().registerEntityId(entity.getId());
 
 			const EntityIndex newEntityId = mEntities.size();
 			mEntities.push_back(entity);
@@ -707,32 +715,16 @@ namespace RaccoonEcs
 			onEntityAdded.broadcast();
 		}
 
-#ifdef RACOON_ECS_COPYABLE_COMPONENTS
+#ifdef RACCOON_ECS_COPYABLE_COMPONENTS
 		/**
-		 * @brief Creates new EntityManager containing copies of all stored entities and their components
+		 * @brief Rewrite this entity manager with a copy of originalInstance
 		 */
-		std::unique_ptr<EntityManager> clone() const
+		void overrideBy(const EntityManager& originalInstance)
 		{
-			std::unique_ptr<EntityManager> result = std::make_unique<EntityManager>(mComponentFactory, mEntityGenerator);
-			result->mEntities = mEntities;
-			result->mEntityIndexMap = mEntityIndexMap;
-
-			for (auto& componentVectorPair : mComponents)
-			{
-				std::vector<void*>& newComponents = result->mComponents.getOrCreateComponentVectorById(componentVectorPair.first);
-				const std::vector<void*>& originalComponents = componentVectorPair.second;
-				const size_t componentsCount = originalComponents.size();
-				newComponents.resize(componentsCount);
-				const auto cloneFn = mComponentFactory.getCloneFn(componentVectorPair.first);
-				for (size_t i = 0; i < componentsCount; ++i)
-				{
-					newComponents[i] = cloneFn(originalComponents[i]);
-				}
-			}
-
-			return result;
+			clear();
+			copyEntitiesFrom(originalInstance);
 		}
-#endif // RACOON_ECS_COPYABLE_COMPONENTS
+#endif // RACCOON_ECS_COPYABLE_COMPONENTS
 
 		/**
 		 * @brief Shrinks the vectors of components to elliminate empty elements at the end, and
@@ -768,7 +760,7 @@ namespace RaccoonEcs
 		{
 			for (auto& componentVector : mComponents)
 			{
-				auto deleterFn = mComponentFactory.getDeletionFn(componentVector.first);
+				auto deleterFn = mComponentFactory.get().getDeletionFn(componentVector.first);
 
 				for (auto component : componentVector.second)
 				{
@@ -966,6 +958,27 @@ namespace RaccoonEcs
 			}
 		}
 
+#ifdef RACCOON_ECS_COPYABLE_COMPONENTS
+		void copyEntitiesFrom(const EntityManager& originalInstance)
+		{
+			mEntities = originalInstance.mEntities;
+			mEntityIndexMap = originalInstance.mEntityIndexMap;
+
+			for (auto& componentVectorPair : originalInstance.mComponents)
+			{
+				std::vector<void*>& newComponents = mComponents.getOrCreateComponentVectorById(componentVectorPair.first);
+				const std::vector<void*>& originalComponents = componentVectorPair.second;
+				const size_t componentsCount = originalComponents.size();
+				newComponents.resize(componentsCount);
+				const auto cloneFn = mComponentFactory.get().getCloneFn(componentVectorPair.first);
+				for (size_t i = 0; i < componentsCount; ++i)
+				{
+					newComponents[i] = cloneFn(originalComponents[i]);
+				}
+			}
+		}
+#endif // RACCOON_ECS_COPYABLE_COMPONENTS
+
 	private:
 		ComponentMap mComponents;
 		std::vector<Entity> mEntities;
@@ -976,8 +989,8 @@ namespace RaccoonEcs
 		std::vector<ComponentToAdd> mScheduledComponentAdditions;
 		std::vector<ComponentToRemove> mScheduledComponentRemovements;
 
-		const ComponentFactory& mComponentFactory;
-		EntityGenerator& mEntityGenerator;
+		std::reference_wrapper<const ComponentFactory> mComponentFactory;
+		std::reference_wrapper<EntityGenerator> mEntityGenerator;
 	};
 
 } // namespace RaccoonEcs

@@ -36,7 +36,15 @@ namespace RaccoonEcs
 			removeAllComponents();
 		}
 
+#ifdef RACCOON_ECS_COPYABLE_COMPONENTS
+		ComponentSetHolderImpl(const ComponentSetHolderImpl& other)
+			: mComponentFactory(other.mComponentFactory)
+		{
+			copyComponentsFrom(other);
+		}
+#else
 		ComponentSetHolderImpl(const ComponentSetHolderImpl&) = delete;
+#endif // RACCOON_ECS_COPYABLE_COMPONENTS
 		ComponentSetHolderImpl& operator=(const ComponentSetHolderImpl&) = delete;
 		ComponentSetHolderImpl(ComponentSetHolderImpl&&) = default;
 		ComponentSetHolderImpl& operator=(ComponentSetHolderImpl&&) = default;
@@ -99,7 +107,7 @@ namespace RaccoonEcs
 		 */
 		void* addComponentByType(ComponentTypeId typeId) noexcept
 		{
-			auto createFn = mComponentFactory.getCreationFn(typeId);
+			auto createFn = mComponentFactory.get().getCreationFn(typeId);
 			void* component = createFn();
 			addComponent(component, typeId);
 			return component;
@@ -145,7 +153,7 @@ namespace RaccoonEcs
 		{
 			if (auto it = mComponents.find(typeId); it != mComponents.end())
 			{
-				auto deleterFn = mComponentFactory.getDeletionFn(it->first);
+				auto deleterFn = mComponentFactory.get().getDeletionFn(it->first);
 				deleterFn(it->second);
 				mComponents.erase(it);
 			}
@@ -187,27 +195,22 @@ namespace RaccoonEcs
 		{
 			for (auto& component : mComponents)
 			{
-				auto deleterFn = mComponentFactory.getDeletionFn(component.first);
+				auto deleterFn = mComponentFactory.get().getDeletionFn(component.first);
 				deleterFn(component.second);
 			}
 			mComponents.clear();
 		}
 
-#ifdef RACOON_ECS_COPYABLE_COMPONENTS
+#ifdef RACCOON_ECS_COPYABLE_COMPONENTS
 		/**
-		 * @brief Creates new ComponentSetHolder containing copies of all stored components
+		 * @brief Override the storage with copies of all components from
 		 */
-		std::unique_ptr<ComponentSetHolder> clone() const
+		void overrideBy(const ComponentSetHolder& originalInstance)
 		{
-			std::unique_ptr<ComponentSetHolder> result = std::make_unique<ComponentSetHolder>(mComponentFactory);
-			for (auto& [type, component] : mComponents)
-			{
-				const auto& cloneFn = mComponentFactory.getCloneFn(type);
-				result->mComponents.emplace(type, cloneFn(component));
-			}
-			return result;
+			removeAllComponents();
+			copyComponentsFrom(originalInstance);
 		}
-#endif // RACOON_ECS_COPYABLE_COMPONENTS
+#endif // RACCOON_ECS_COPYABLE_COMPONENTS
 
 	private:
 		template<typename Component>
@@ -238,10 +241,21 @@ namespace RaccoonEcs
 			}
 		}
 
+#ifdef RACCOON_ECS_COPYABLE_COMPONENTS
+		void copyComponentsFrom(const ComponentSetHolder& originalInstance)
+		{
+			for (auto& [type, component] : originalInstance.mComponents)
+			{
+				const auto& cloneFn = mComponentFactory.get().getCloneFn(type);
+				mComponents.emplace(type, cloneFn(component));
+			}
+		}
+#endif // RACCOON_ECS_COPYABLE_COMPONENTS
+
 	private:
 		std::unordered_map<ComponentTypeId, void*> mComponents;
 
-		const ComponentFactory& mComponentFactory;
+		std::reference_wrapper<const ComponentFactory> mComponentFactory;
 	};
 
 } // namespace RaccoonEcs
