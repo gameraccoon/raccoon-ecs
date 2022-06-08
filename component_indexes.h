@@ -1,9 +1,11 @@
 #pragma once
 
-#include <vector>
-#include <tuple>
+#include <bit>
 #include <functional>
+#include <limits>
+#include <tuple>
 #include <unordered_map>
+#include <vector>
 
 #include "component_map.h"
 
@@ -55,12 +57,8 @@ namespace RaccoonEcs
 
 		void clear()
 		{
-			for (auto& pair : mIndexes)
-			{
-				Index& index = pair.second;
-				index.matchingEntities.clear();
-				index.sparseArray.clear();
-			}
+			mIndexes.clear();
+			mIndexesHavingComponent.clear();
 		}
 
 		void rebuild(const ComponentMap& componentMap)
