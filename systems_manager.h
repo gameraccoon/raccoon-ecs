@@ -19,7 +19,6 @@ namespace RaccoonEcs
 		void registerSystem(Args&&... args)
 		{
 			mSystems.emplace_back(new T(std::forward<Args>(args)...));
-			mSystemIds.push_back(T::GetSystemId());
 		}
 
 		void update()
@@ -47,14 +46,8 @@ namespace RaccoonEcs
 			mSystems.clear();
 		}
 
-		const std::vector<std::string>& getSystemNames()
-		{
-			return mSystemIds;
-		}
-
 	private:
 		std::vector<std::unique_ptr<System>> mSystems;
-		std::vector<std::string> mSystemIds;
 	};
 
 } // namespace RaccoonEcs
