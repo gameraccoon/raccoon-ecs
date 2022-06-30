@@ -19,9 +19,9 @@ namespace RaccoonEcs
 	public:
 		explicit Entity(EntityId id) : mId(id) {}
 
-		bool operator ==(Entity b) const { return mId == b.mId; }
-		bool operator !=(Entity b) const { return !(*this == b); }
-		bool operator <(Entity b) const { return mId < b.mId; }
+		bool operator==(Entity b) const { return mId == b.mId; }
+		bool operator!=(Entity b) const { return !(*this == b); }
+		bool operator<(Entity b) const { return mId < b.mId; }
 
 		[[nodiscard]] EntityId getId() const { return mId; }
 
@@ -71,3 +71,12 @@ namespace RaccoonEcs
 	static_assert(std::is_trivially_copyable<OptionalEntity>(), "OptionalEntity should be trivially copyable");
 	static_assert(std::is_trivially_destructible<OptionalEntity>(), "OptionalEntity should be trivially destructible");
 } // namespace RaccoonEcs
+
+namespace std
+{
+	template <>
+	struct hash<RaccoonEcs::Entity>
+	{
+		std::size_t operator()(RaccoonEcs::Entity entity) const { return std::hash<RaccoonEcs::Entity::EntityId>()(entity.getId()); }
+	};
+}
