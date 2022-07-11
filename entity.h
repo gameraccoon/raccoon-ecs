@@ -19,9 +19,9 @@ namespace RaccoonEcs
 	public:
 		explicit Entity(EntityId id) : mId(id) {}
 
-		bool operator==(Entity b) const { return mId == b.mId; }
-		bool operator!=(Entity b) const { return !(*this == b); }
-		bool operator<(Entity b) const { return mId < b.mId; }
+		bool operator==(const Entity&) const noexcept = default;
+		bool operator!=(const Entity&) const noexcept = default;
+		bool operator<(Entity b) const noexcept { return mId < b.mId; }
 
 		[[nodiscard]] EntityId getId() const { return mId; }
 
