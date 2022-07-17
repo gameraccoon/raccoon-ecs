@@ -81,7 +81,7 @@ namespace RaccoonEcs
 			Key(std::vector<ComponentTypeId>&& componentTypes)
 				: componentTypes(std::move(componentTypes))
 			{
-				std::sort(componentTypes.begin(), componentTypes.end());
+				std::sort(this->componentTypes.begin(), this->componentTypes.end());
 			}
 
 			bool operator==(const Key& anotherKey) const
