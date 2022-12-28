@@ -7,6 +7,7 @@
 
 #include "component_factory.h"
 #include "delegates.h"
+#include "error_handling.h"
 #include "typed_component.h"
 
 namespace RaccoonEcs
@@ -27,7 +28,7 @@ namespace RaccoonEcs
 		 * @param componentFactory  reference to an existent component factory that
 		 * should outlive this component set holder
 		 */
-		ComponentSetHolderImpl(const ComponentFactory& componentFactory)
+		explicit ComponentSetHolderImpl(const ComponentFactory& componentFactory)
 			: mComponentFactory(componentFactory)
 		{}
 
@@ -46,8 +47,8 @@ namespace RaccoonEcs
 		ComponentSetHolderImpl(const ComponentSetHolderImpl&) = delete;
 #endif // RACCOON_ECS_COPYABLE_COMPONENTS
 		ComponentSetHolderImpl& operator=(const ComponentSetHolderImpl&) = delete;
-		ComponentSetHolderImpl(ComponentSetHolderImpl&&) = default;
-		ComponentSetHolderImpl& operator=(ComponentSetHolderImpl&&) = default;
+		ComponentSetHolderImpl(ComponentSetHolderImpl&&) noexcept = default;
+		ComponentSetHolderImpl& operator=(ComponentSetHolderImpl&&) noexcept = default;
 
 		/**
 		 * @brief Gets all components stored in this component set holder
@@ -64,7 +65,7 @@ namespace RaccoonEcs
 
 			return components;
 		}
-\
+
 		/**
 		 * @brief Gets all components stored in this component set holder
 		 * @return vector of non-null constant pointers to components together with their types
@@ -123,9 +124,19 @@ namespace RaccoonEcs
 		 */
 		void addComponent(void* component, ComponentTypeId typeId)
 		{
-			if (component != nullptr && !mComponents.contains(typeId))
+			if (component == nullptr)
 			{
-				mComponents[typeId] = component;
+				return;
+			}
+
+			if (!mComponents.contains(typeId))
+			{
+				addComponentUnsafe(component, typeId);
+			}
+			else
+			{
+				using std::to_string;
+				RACCOON_ECS_ERROR("Trying to add component of type " + to_string(typeId) + " that already exists, this will result in a memory leak");
 			}
 		}
 
@@ -140,7 +151,7 @@ namespace RaccoonEcs
 			auto it = mComponents.find(ComponentType::GetTypeId());
 			if (it == mComponents.end())
 			{
-				return addComponent<ComponentType>();
+				return static_cast<ComponentType*>(addComponentByTypeUnsafe(ComponentType::GetTypeId()));
 			}
 			return static_cast<ComponentType*>(it->second);
 		}
@@ -213,6 +224,19 @@ namespace RaccoonEcs
 #endif // RACCOON_ECS_COPYABLE_COMPONENTS
 
 	private:
+		void* addComponentByTypeUnsafe(ComponentTypeId typeId) noexcept
+		{
+			auto createFn = mComponentFactory.get().getCreationFn(typeId);
+			void* component = createFn();
+			addComponentUnsafe(component, typeId);
+			return component;
+		}
+
+		void addComponentUnsafe(void* component, ComponentTypeId typeId)
+		{
+			mComponents[typeId] = component;
+		}
+
 		template<typename Component>
 		Component* getSingleComponent()
 		{
