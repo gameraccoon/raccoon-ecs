@@ -64,7 +64,7 @@ namespace RaccoonEcs
 		}
 
 #ifdef RACCOON_ECS_COPYABLE_COMPONENTS
-		EntityManagerImpl(const EntityManagerImpl& other)
+		explicit EntityManagerImpl(const EntityManagerImpl& other)
 			: EntityManagerImpl(other.mComponentFactory, other.mEntityGenerator)
 		{
 			copyEntitiesFrom(other);
@@ -73,8 +73,8 @@ namespace RaccoonEcs
 		EntityManagerImpl(const EntityManagerImpl&) = delete;
 #endif // RACCOON_ECS_COPYABLE_COMPONENTS
 		EntityManagerImpl& operator=(const EntityManagerImpl&) = delete;
-		EntityManagerImpl(EntityManagerImpl&&) = default;
-		EntityManagerImpl& operator=(EntityManagerImpl&&) = default;
+		EntityManagerImpl(EntityManagerImpl&&) noexcept = default;
+		EntityManagerImpl& operator=(EntityManagerImpl&&) noexcept = default;
 
 		/**
 		 * @brief Generates a new unique entity and adds it to this manager
@@ -288,7 +288,7 @@ namespace RaccoonEcs
 			{
 				using std::to_string;
 				RACCOON_ECS_ERROR(std::string("Trying to add component ") + to_string(typeId)
-					+ " to a non-exsistent entity" + std::to_string(entity.getId()));
+					+ " to a non-existent entity " + std::to_string(entity.getId()));
 				// memory leak here
 				return;
 			}
@@ -313,7 +313,7 @@ namespace RaccoonEcs
 			{
 				using std::to_string;
 				RACCOON_ECS_ERROR(std::string("Trying to remove component ") + to_string(typeId)
-						+ " from a non-existent entity" + std::to_string(entity.getId()));
+						+ " from a non-existent entity " + std::to_string(entity.getId()));
 				return;
 			}
 
