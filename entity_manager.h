@@ -332,11 +332,11 @@ namespace RaccoonEcs
 		}
 
 		/**
-		 * @brief Creates a component of the given type and chedules its addition to the given entity
+		 * @brief Creates a component of the given type and schedules its addition to the given entity
 		 * @param entity  The entity that will own the component
 		 * @return  A pointer to the newly created default-initialized component
 		 *
-		 * You can use the component right away, but it won't be querried before `executeScheduledActions` called.
+		 * You can use the component right away, but it won't be queried before `executeScheduledActions` called.
 		 *
 		 * Beware that the entity should not have the component of the given type prior `executeScheduledActions`
 		 * called otherwise the call can result with memory leak or UB
@@ -352,11 +352,11 @@ namespace RaccoonEcs
 		}
 
 		/**
-		 * @brief Creates a component of the given type and chedules its addition to the given entity
+		 * @brief Creates a component of the given type and schedules its addition to the given entity
 		 * @param entity  The entity that will own the component
 		 * @return  A pointer to the newly created default-initialized component
 		 *
-		 * You can use the component right away, but it won't be querried before `executeScheduledActions` called.
+		 * You can use the component right away, but it won't be queried before `executeScheduledActions` called.
 		 *
 		 * Beware that the entity should not have the component of the given type prior `executeScheduledActions`
 		 * called otherwise the call can result with memory leak or UB
@@ -457,7 +457,7 @@ namespace RaccoonEcs
 		}
 
 		/**
-		 * @brief Collects enrities that has all the given components together with components,
+		 * @brief Collects entities that has all the given components together with components,
 		 * appends the result to the in-out argument
 		 * @param inOutComponents  The vector of tuples of component pointers, matched data will
 		 * be appended to the vector
@@ -495,7 +495,7 @@ namespace RaccoonEcs
 
 		/**
 		 * @brief Applies the given callable to all the component sets from matched entities
-		 * @param processor  The callable that will be applied to the mathced component sets
+		 * @param processor  The callable that will be applied to the matched component sets
 		 * @param data  Additional data, will be added to each matched record. Can be useful
 		 * to identify a specific manager
 		 */
@@ -525,7 +525,7 @@ namespace RaccoonEcs
 		/**
 		 * @brief Applies the given callable to all the entities together with component sets
 		 * that have all the given components
-		 * @param processor  The callable that will be applied to the mathced component sets
+		 * @param processor  The callable that will be applied to the matched component sets
 		 * @param data  Additional data, will be added to each matched record. Can be useful
 		 * to identify a specific manager
 		 */
@@ -607,7 +607,7 @@ namespace RaccoonEcs
 		/**
 		 * @brief Transfers the given entity together with its components to another manager
 		 * @param otherManager  The manager to which the entity will be transfer to
-		 * @param entity  The enitity that will be transfered
+		 * @param entity  The entity that will be transferred
 		 *
 		 * The components are guaranteed not to be moved in the memory.
 		 */
@@ -674,7 +674,7 @@ namespace RaccoonEcs
 		}
 
 		/**
-		 * @brief Inits the index if it wasn't created
+		 * @brief Initializes the index if it wasn't created
 		 *
 		 * This function is not necessary to call, indexes will be created automatically
 		 * when some request for components made, however you can do it in advance
@@ -727,7 +727,7 @@ namespace RaccoonEcs
 #endif // RACCOON_ECS_COPYABLE_COMPONENTS
 
 		/**
-		 * @brief Shrinks the vectors of components to elliminate empty elements at the end, and
+		 * @brief Shrinks the vectors of components to eliminate empty elements at the end, and
 		 * remove empty vectors
 		 */
 		void clearCaches()
