@@ -24,8 +24,8 @@ do \
 
 #else
 
-#define RACCOON_ECS_ERROR(message)
-#define RACCOON_ECS_ASSERT(condition, message)
+#define RACCOON_ECS_ERROR(message) do {} while(0)
+#define RACCOON_ECS_ASSERT(condition, message) do {} while(0)
 
 #endif // RACCOON_ECS_DEBUG_CHECKS_ENABLED
 
