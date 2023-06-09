@@ -44,6 +44,8 @@ namespace RaccoonEcs
 		{
 			for (auto& pair : mIndexes)
 			{
+				// we remove entities by swapping them with the last entity in the array
+				// so we need to update the index of the swapped entity
 				pair.second.removeEntityWithSwap(removedEntityIndex, swappedEntityIndex);
 			}
 		}
@@ -78,9 +80,10 @@ namespace RaccoonEcs
 			size_t hash = 0;
 			std::vector<ComponentTypeId> componentTypes;
 
-			Key(std::vector<ComponentTypeId>&& componentTypes)
+			explicit Key(std::vector<ComponentTypeId>&& componentTypes)
 				: componentTypes(std::move(componentTypes))
 			{
+				// to compare keys reliably we need to sort them
 				std::sort(this->componentTypes.begin(), this->componentTypes.end());
 			}
 
@@ -142,15 +145,20 @@ namespace RaccoonEcs
 
 			void removeEntityWithSwap(size_t removedEntityIndex, size_t swappedEntityIndex)
 			{
+				// if the swapped entity was in the index
 				if (swappedEntityIndex < sparseArray.size() && sparseArray[swappedEntityIndex] != InvalidIndex)
 				{
+					// if the removed entity was in the index as well
 					if (sparseArray[removedEntityIndex] != InvalidIndex)
 					{
+						// remove the swapped entity from the index because the removed entity was swapped into its place
 						tryRemoveEntity(swappedEntityIndex);
 					}
 					else
 					{
-						size_t newSwappedIdx = sparseArray[swappedEntityIndex];
+						// the removed entity was not in the index
+						// update the index of the removed entity to point to the swapped entity
+						const size_t newSwappedIdx = sparseArray[swappedEntityIndex];
 						sparseArray[removedEntityIndex] = newSwappedIdx;
 						matchingEntities[newSwappedIdx] = removedEntityIndex;
 						sparseArray[swappedEntityIndex] = InvalidIndex;
@@ -158,6 +166,7 @@ namespace RaccoonEcs
 				}
 				else
 				{
+					// swapped entity was not in the index, just remove the entity
 					tryRemoveEntity(removedEntityIndex);
 				}
 			}
