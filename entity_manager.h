@@ -17,26 +17,6 @@
 
 namespace RaccoonEcs
 {
-	namespace TemplateTrick
-	{
-		// a trick to get index of a parameter pack argument by its type
-		template<typename Type, typename... Types>
-		struct Idx;
-
-		template<typename Type, typename... Types>
-		struct Idx<Type, Type, Types...> : std::integral_constant<std::size_t, 0>
-		{
-		};
-
-		template<typename Type, typename FirstType, typename... Types>
-		struct Idx<Type, FirstType, Types...> : std::integral_constant<std::size_t, 1 + Idx<Type, Types...>::value>
-		{
-		};
-
-		template<typename Type, typename... Types>
-		static constexpr std::size_t PackIdx = Idx<Type, Types...>::value;
-	}
-
 	template <typename ComponentTypeId, typename ComponentFactory = ComponentFactoryImpl<ComponentTypeId>>
 	class EntityManagerImpl
 	{
@@ -346,7 +326,7 @@ namespace RaccoonEcs
 		{
 			const ComponentTypeId componentTypeId = ComponentType::GetTypeId();
 			const auto createFn = mComponentFactory.get().getCreationFn(componentTypeId);
-			ComponentType* component = static_cast<ComponentType*>(createFn());
+			auto component = static_cast<ComponentType*>(createFn());
 			scheduleAddComponent(entity, component, componentTypeId);
 			return component;
 		}
@@ -431,27 +411,16 @@ namespace RaccoonEcs
 		template<typename... Components, typename... AdditionalData>
 		void getComponents(std::vector<std::tuple<AdditionalData..., Components* ...>>& inOutComponents, AdditionalData... data)
 		{
-			const std::vector<size_t>& componentIndexes = mIndexes.template getIndex<Components...>(mComponents);
+			const auto& components = mIndexes.template getComponents<Components...>(mComponents);
 
-			if (!componentIndexes.empty())
+			if (!components.empty())
 			{
-				using namespace TemplateTrick;
-
-				if (inOutComponents.size() + componentIndexes.size() > inOutComponents.capacity())
-				{
-					inOutComponents.reserve(std::max(inOutComponents.size() + componentIndexes.size(), inOutComponents.size() * 2));
-				}
-
-				auto vectors = mComponents.template getComponentVectors<Components...>();
-
-				for (size_t index : componentIndexes)
+				for (const auto& componentSet : components)
 				{
 					inOutComponents.push_back(std::tuple_cat(
 						std::make_tuple(data...),
-						std::make_tuple(
-							static_cast<Components*>(std::get<PackIdx<Components, Components...>>(vectors)[index])...)
-						)
-					);
+						componentSet
+					));
 				}
 			}
 		}
@@ -467,8 +436,6 @@ namespace RaccoonEcs
 		template<typename... Components, typename... AdditionalData>
 		void getComponentsWithEntities(std::vector<std::tuple<AdditionalData..., Entity, Components* ...>>& inOutComponents, AdditionalData... data)
 		{
-			using namespace TemplateTrick;
-
 			const std::vector<size_t>& componentIndexes = mIndexes.template getIndex<Components...>(mComponents);
 
 			if (!componentIndexes.empty())
@@ -478,17 +445,15 @@ namespace RaccoonEcs
 					inOutComponents.reserve(std::max(inOutComponents.size() + componentIndexes.size(), inOutComponents.size() * 2));
 				}
 
-				auto vectors = mComponents.template getComponentVectors<Components...>();
+				auto components = mIndexes.template getComponents<Components...>(mComponents);
 
-				for (size_t index : componentIndexes)
+				for (size_t i = 0; i < componentIndexes.size(); ++i)
 				{
 					inOutComponents.push_back(std::tuple_cat(
 						std::make_tuple(data...),
-						std::make_tuple(mEntities[index]),
-						std::make_tuple(
-							static_cast<Components*>(std::get<PackIdx<Components, Components...>>(vectors)[index])...)
-						)
-					);
+						std::make_tuple(mEntities[componentIndexes[i]]),
+						components[i]
+					));
 				}
 			}
 		}
@@ -502,22 +467,16 @@ namespace RaccoonEcs
 		template<typename... Components, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSet(FunctionType processor, AdditionalData... data)
 		{
-			using TemplateTrick::PackIdx;
+			const auto& componens = mIndexes.template getComponents<Components...>(mComponents);
 
-			const std::vector<size_t>& componentIndexes = mIndexes.template getIndex<Components...>(mComponents);
-
-			if (!componentIndexes.empty())
+			if (!componens.empty())
 			{
-				auto vectors = mComponents.template getComponentVectors<Components...>();
-
-				for (size_t index : componentIndexes)
+				for (const auto& componentSet : componens)
 				{
 					std::apply(processor, std::tuple_cat(
 						std::make_tuple(data...),
-						std::make_tuple(
-							static_cast<Components*>(std::get<PackIdx<Components, Components...>>(vectors)[index])...)
-						)
-					);
+						componentSet
+					));
 				}
 			}
 		}
@@ -532,23 +491,19 @@ namespace RaccoonEcs
 		template<typename... Components, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSetWithEntity(FunctionType processor, AdditionalData... data)
 		{
-			using TemplateTrick::PackIdx;
-
 			const std::vector<size_t>& componentIndexes = mIndexes.template getIndex<Components...>(mComponents);
 
 			if (!componentIndexes.empty())
 			{
-				auto vectors = mComponents.template getComponentVectors<Components...>();
+				auto components = mIndexes.template getComponents<Components...>(mComponents);
 
-				for (size_t index : componentIndexes)
+				for (size_t i = 0; i < componentIndexes.size(); ++i)
 				{
 					std::apply(processor, std::tuple_cat(
 						std::make_tuple(data...),
-						std::make_tuple(mEntities[index]),
-						std::make_tuple(
-							static_cast<Components*>(std::get<PackIdx<Components, Components...>>(vectors)[index])...)
-						)
-					);
+						std::make_tuple(mEntities[componentIndexes[i]]),
+						components[i]
+					));
 				}
 			}
 		}
@@ -601,7 +556,7 @@ namespace RaccoonEcs
 		template<typename... Components>
 		size_t getMatchingEntitiesCount()
 		{
-			return mIndexes.template getIndex<Components...>(mComponents).size();
+			return mIndexes.template getIndexSize<Components...>(mComponents);
 		}
 
 		/**
@@ -683,7 +638,7 @@ namespace RaccoonEcs
 		template <typename... Components>
 		void initIndex()
 		{
-			mIndexes.template getIndex<Components...>(mComponents);
+			mIndexes.template initializeIndex<Components...>(mComponents);
 		}
 
 		/**
@@ -829,7 +784,7 @@ namespace RaccoonEcs
 		template<int I = 0>
 		std::tuple<> getEmptyComponents()
 		{
-			return std::tuple<>();
+			return {};
 		}
 
 		template<typename FirstComponent, typename... Components>
@@ -841,7 +796,7 @@ namespace RaccoonEcs
 		template<unsigned Index, typename Datas>
 		std::tuple<> getEntityComponentSetInner(EntityIndex /*entityIdx*/, Datas& /*componentVectors*/)
 		{
-			return std::tuple<>();
+			return {};
 		}
 
 		template<unsigned Index, typename Datas, typename FirstComponent, typename... Components>

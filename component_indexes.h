@@ -13,6 +13,26 @@
 
 namespace RaccoonEcs
 {
+	namespace TemplateTrick
+	{
+		// a trick to get index of a parameter pack argument by its type
+		template<typename Type, typename... Types>
+		struct Idx;
+
+		template<typename Type, typename... Types>
+		struct Idx<Type, Type, Types...> : std::integral_constant<std::size_t, 0>
+		{
+		};
+
+		template<typename Type, typename FirstType, typename... Types>
+		struct Idx<Type, FirstType, Types...> : std::integral_constant<std::size_t, 1 + Idx<Type, Types...>::value>
+		{
+		};
+
+		template<typename Type, typename... Types>
+		static constexpr std::size_t PackIdx = Idx<Type, Types...>::value;
+	}
+
 	template <typename ComponentTypeId>
 	class ComponentIndexes
 	{
@@ -20,6 +40,44 @@ namespace RaccoonEcs
 		using ComponentMap = ComponentMapImpl<ComponentTypeId>;
 
 	public:
+		ComponentIndexes() = default;
+		ComponentIndexes(const ComponentIndexes&)
+			: ComponentIndexes()
+		{}
+
+		ComponentIndexes(ComponentIndexes&& other) noexcept
+			: mIndexes(std::move(other.mIndexes))
+			, mIndexesHavingComponent(std::move(other.mIndexesHavingComponent))
+			, mIndexRemovalCallbacks(std::move(other.mIndexRemovalCallbacks))
+			, mIndexMoveCallbacks(std::move(other.mIndexMoveCallbacks))
+		{
+			for (auto& callback : mIndexMoveCallbacks)
+			{
+				callback.second(other, *this);
+			}
+		}
+
+		ComponentIndexes& operator=(const ComponentIndexes&)
+		{
+			clear();
+			return *this;
+		}
+		ComponentIndexes& operator=(ComponentIndexes&& other) noexcept
+		{
+			for (auto& callback : mIndexRemovalCallbacks)
+			{
+				callback.second(*this);
+			}
+			mIndexes = std::move(other.mIndexes);
+			mIndexesHavingComponent = std::move(other.mIndexesHavingComponent);
+			mIndexRemovalCallbacks = std::move(other.mIndexRemovalCallbacks);
+			mIndexMoveCallbacks = std::move(other.mIndexMoveCallbacks);
+			for (auto& callback : mIndexMoveCallbacks)
+			{
+				callback.second(other, *this);
+			}
+			return *this;
+		}
 		~ComponentIndexes()
 		{
 			for (auto& callback : mIndexRemovalCallbacks)
@@ -59,10 +117,30 @@ namespace RaccoonEcs
 		}
 
 		template<typename... Components>
+		void initializeIndex(const ComponentMap& componentMap)
+		{
+			getOrCreateIndex<std::remove_const_t<Components>...>(componentMap);
+		}
+
+		template<typename... Components>
 		const std::vector<size_t>& getIndex(const ComponentMap& componentMap)
 		{
-			const Index<std::remove_const_t<Components>...>& index = getOrCreateIndex<std::remove_const_t<Components>...>(componentMap);
+			const auto& index = getOrCreateIndex<std::remove_const_t<Components>...>(componentMap);
 			return index.getMatchingEntities();
+		}
+
+        template<typename... Components>
+        size_t getIndexSize(const ComponentMap& componentMap)
+        {
+            const auto& index = getOrCreateIndex<std::remove_const_t<Components>...>(componentMap);
+            return index.getMatchingEntities().size();
+        }
+
+		template<typename... Components>
+		const std::vector<std::tuple<std::remove_const_t<Components>*...>>& getComponents(const ComponentMap& componentMap)
+		{
+			const auto& index = getOrCreateIndex<std::remove_const_t<Components>...>(componentMap);
+			return index.getComponents();
 		}
 
 		void clear()
@@ -84,28 +162,16 @@ namespace RaccoonEcs
 
 	private:
 		template<typename... Components>
-		struct ComponentCache {
-			std::vector<std::tuple<Components*...>> components;
+		struct DenseArray {
+			std::vector<std::tuple<Components*...>> cachedComponents;
+			std::vector<size_t> matchingEntityIndexes;
 
-			ComponentCache() = default;
-			~ComponentCache() = default;
-			ComponentCache(const ComponentCache&) = delete;
-			ComponentCache& operator=(const ComponentCache&) = delete;
-			ComponentCache(ComponentCache&&) = delete;
-			ComponentCache& operator=(ComponentCache&&) = delete;
-
-			size_t addRecord([[maybe_unused]]const ComponentMap& componentMap)
-			{
-				//components.emplace_back(componentMap.template getComponentVectorById<Components>(Components::GetTypeId()static_cast<>[cache->matchingEntities.size()])...);
-				return components.size() - 1;
-			}
-
-			size_t removeRecord(size_t idx)
-			{
-				std::swap(components.back(), components[idx]);
-				components.pop_back();
-				return components.size();
-			}
+			DenseArray() = default;
+			~DenseArray() = default;
+			DenseArray(const DenseArray&) = delete;
+			DenseArray& operator=(const DenseArray&) = delete;
+			DenseArray(DenseArray&&) noexcept = default;
+			DenseArray& operator=(DenseArray&&) noexcept = default;
 		};
 
 		class BaseIndex
@@ -115,13 +181,13 @@ namespace RaccoonEcs
 			virtual ~BaseIndex() = default;
 			BaseIndex(const BaseIndex&) = delete;
 			BaseIndex& operator=(const BaseIndex&) = delete;
-			BaseIndex(BaseIndex&&) = delete;
-			BaseIndex& operator=(BaseIndex&&) = delete;
+			BaseIndex(BaseIndex&&) noexcept = default;
+			BaseIndex& operator=(BaseIndex&&) noexcept = default;
 
 			virtual void tryAddEntity(size_t entityIndex, const ComponentMap& componentMap) = 0;
 			virtual void tryRemoveEntity(size_t entityIndex) = 0;
 			virtual void removeEntityWithSwap(size_t removedEntityIndex, size_t swappedEntityIndex) = 0;
-			virtual void populate(const ComponentMap& /*componentMap*/) = 0;
+			virtual void populate(const ComponentMap& componentMap) = 0;
 			virtual void repopulate(const ComponentMap& componentMap) = 0;
 			virtual void clear() = 0;
 			[[nodiscard]] bool isPopulated() const { return mIsPopulated; }
@@ -146,13 +212,16 @@ namespace RaccoonEcs
 
 			void tryAddEntity(size_t entityIndex, const ComponentMap& componentMap) final
 			{
-				for (ComponentTypeId typeId : mComponentTypes)
-				{
-					const std::vector<void*>& componentVector = componentMap.getComponentVectorById(typeId);
+                using namespace TemplateTrick;
+                std::array<const std::vector<void*>*, sizeof...(Components)> componentVectors;
+				for (size_t i = 0; i < sizeof...(Components); ++i)
+                {
+                    const std::vector<void*>& componentVector = componentMap.getComponentVectorById(mComponentTypes[i]);
 					if (entityIndex >= componentVector.size() || componentVector[entityIndex] == nullptr)
 					{
 						return;
 					}
+                    componentVectors[i] = &componentVector;
 				}
 
 				if (mSparseArray.size() <= entityIndex)
@@ -164,10 +233,9 @@ namespace RaccoonEcs
 					mSparseArray.resize(entityIndex + 1, BaseIndex::InvalidIndex);
 				}
 
-				mSparseArray[entityIndex] = mMatchingEntities.size();
-				mMatchingEntities.push_back(entityIndex);
-//				[[maybe_unused]] const size_t index = mCache.addRecord(componentMap);
-//				RACCOON_ECS_ASSERT(index == matchingEntities.size() - 1, "Indexes are out of sync");
+				mSparseArray[entityIndex] = mDenseArray.matchingEntityIndexes.size();
+				mDenseArray.cachedComponents.emplace_back(static_cast<Components*>((*componentVectors[Idx<Components, Components...>()])[entityIndex])...);
+				mDenseArray.matchingEntityIndexes.push_back(entityIndex);
 			}
 
 			void tryRemoveEntity(size_t entityIndex) final
@@ -177,15 +245,15 @@ namespace RaccoonEcs
 					const size_t idx = mSparseArray[entityIndex];
 					if (idx != BaseIndex::InvalidIndex)
 					{
-						if (idx != mMatchingEntities.size() - 1)
+						if (idx != mDenseArray.matchingEntityIndexes.size() - 1)
 						{
-							mSparseArray[mMatchingEntities.back()] = idx;
-							mMatchingEntities[idx] = mMatchingEntities.back();
+							mSparseArray[mDenseArray.matchingEntityIndexes.back()] = idx;
+							mDenseArray.cachedComponents[idx] = mDenseArray.cachedComponents.back();
+							mDenseArray.matchingEntityIndexes[idx] = mDenseArray.matchingEntityIndexes.back();
 						}
 						mSparseArray[entityIndex] = BaseIndex::InvalidIndex;
-						mMatchingEntities.pop_back();
-//						[[maybe_unused]] const size_t newSize = mCache.removeRecord(idx);
-//						RACCOON_ECS_ASSERT(newSize == matchingEntities.size(), "Vector sizes are out of sync");
+						mDenseArray.cachedComponents.pop_back();
+						mDenseArray.matchingEntityIndexes.pop_back();
 					}
 				}
 			}
@@ -196,19 +264,56 @@ namespace RaccoonEcs
 				if (swappedEntityIndex < mSparseArray.size() && mSparseArray[swappedEntityIndex] != BaseIndex::InvalidIndex)
 				{
 					// if the removed entity was in the index as well
-					if (removedEntityIndex < mSparseArray.size() && mSparseArray[removedEntityIndex] != BaseIndex::InvalidIndex)
-					{
-						// remove the swapped entity from the index because the removed entity was swapped into its place
-						tryRemoveEntity(swappedEntityIndex);
+					if (removedEntityIndex < mSparseArray.size() && mSparseArray[removedEntityIndex] != BaseIndex::InvalidIndex) {
+						// update the index of the removed entity to point to the swapped entity
+						// removedEntityIndex = 1; swappedEntityIndex = 4
+						// Before:
+						// Sparse array
+						// [-1, >0<, -1, 2, (1), -1]
+						// Dense array (indexes)
+						// [>1<, 4, 3]
+						// Dense array (components)
+						// [>A<, B, C]
+						// After:
+						// Sparse array
+						// [-1, (0), -1, 1, -1, -1]
+						// Dense array (indexes)
+						// [1, 3] -> pop 4
+						// Dense array (components)
+						// [B, C] -> pop A
+
+						// find the positions in the dense array of the removed and swapped entities
+						const size_t removedEntityDenseIdx = mSparseArray[removedEntityIndex]; // 0
+						const size_t swappedEntityDenseIdx = mSparseArray[swappedEntityIndex]; // 1
+						// find the position in the sparse array of the last entity in the dense array
+						const size_t lastEntitySparseIdx = mDenseArray.matchingEntityIndexes.back(); // 3
+						// swap the swapped entity with the last entity in the dense array
+						std::swap(mDenseArray.matchingEntityIndexes[swappedEntityDenseIdx],
+								  mDenseArray.matchingEntityIndexes[lastEntitySparseIdx]);
+						// pop the last entity from the dense array
+						mDenseArray.matchingEntityIndexes.pop_back();
+
+						// update the index of the last entity in the sparse array to point to the swapped entity
+						mSparseArray[lastEntitySparseIdx] = swappedEntityDenseIdx;
+						// remove the swapped entity from the sparse array
+						mSparseArray[swappedEntityIndex] = BaseIndex::InvalidIndex;
+
+						// for dense arrays of components, swap the removed entity with the last entity in the dense array
+						std::swap(mDenseArray.cachedComponents[removedEntityDenseIdx],
+								  mDenseArray.cachedComponents.back());
+						// pop the last entity from the dense array
+						mDenseArray.cachedComponents.pop_back();
+						// swap the removed entity with the swapped entity in the sparse array
+						if (mDenseArray.cachedComponents.size() != swappedEntityDenseIdx)
+						{
+							std::swap(mDenseArray.cachedComponents[swappedEntityDenseIdx], mDenseArray.cachedComponents[removedEntityDenseIdx]);
+						}
 					}
 					else
 					{
-						// the removed entity was not in the index
-						// update the index of the removed entity to point to the swapped entity
-						const size_t newSwappedIdx = mSparseArray[swappedEntityIndex];
-						mSparseArray[removedEntityIndex] = newSwappedIdx;
-						mMatchingEntities[newSwappedIdx] = removedEntityIndex;
-						mSparseArray[swappedEntityIndex] = BaseIndex::InvalidIndex;
+						// removed entity was not in the index, just update the index of the swapped entity
+						mSparseArray[swappedEntityIndex] = mSparseArray[removedEntityIndex];
+						mSparseArray[removedEntityIndex] = BaseIndex::InvalidIndex;
 					}
 				}
 				else
@@ -220,12 +325,17 @@ namespace RaccoonEcs
 
 			[[nodiscard]] const std::vector<size_t>& getMatchingEntities() const
 			{
-				return mMatchingEntities;
+				return mDenseArray.matchingEntityIndexes;
+			}
+
+			[[nodiscard]] size_t getMatchingEntitiesCount() const
+			{
+				return mDenseArray.matchingEntityIndexes.size();
 			}
 
 			[[nodiscard]] const std::vector<std::tuple<Components*...>>& getComponents() const
 			{
-				return mCache.components;
+				return mDenseArray.cachedComponents;
 			}
 
 			[[nodiscard]] const std::vector<ComponentTypeId>& getComponentTypes() const
@@ -255,8 +365,10 @@ namespace RaccoonEcs
 				{
 					if (doesEntityHaveAllComponents(componentVectors, i))
 					{
-						mMatchingEntities.push_back(i);
-						mSparseArray[i] = mMatchingEntities.size() - 1;
+                        using namespace TemplateTrick;
+						mDenseArray.matchingEntityIndexes.push_back(i);
+						mSparseArray[i] = mDenseArray.matchingEntityIndexes.size() - 1;
+						mDenseArray.cachedComponents.emplace_back(static_cast<Components*>((*componentVectors[Idx<Components, Components...>()])[i])...);
 					}
 				}
 			}
@@ -270,9 +382,9 @@ namespace RaccoonEcs
 			void clear() final
 			{
 				BaseIndex::setPopulated(false);
-				mMatchingEntities.clear();
+				mDenseArray.matchingEntityIndexes.clear();
+				mDenseArray.cachedComponents.clear();
 				mSparseArray.clear();
-				mCache.components.clear();
 			}
 
 		private:
@@ -289,9 +401,8 @@ namespace RaccoonEcs
 			}
 
 		private:
-			ComponentCache<Components...> mCache;
+			DenseArray<Components...> mDenseArray;
 			std::vector<ComponentTypeId> mComponentTypes;
-			std::vector<size_t> mMatchingEntities;
 			std::vector<size_t> mSparseArray;
 		};
 
@@ -320,6 +431,12 @@ namespace RaccoonEcs
 				{
 					getIndexMap<Components...>().erase(&self);
 				});
+				mIndexMoveCallbacks.try_emplace(&index, [](ComponentIndexes<ComponentTypeId>& from, ComponentIndexes<ComponentTypeId>& to)
+				{
+					auto& indexMap = getIndexMap<Components...>();
+					indexMap[&to] = std::move(indexMap[&from]);
+					indexMap.erase(&from);
+				});
 			}
 			return index;
 		}
@@ -328,5 +445,6 @@ namespace RaccoonEcs
 		std::vector<BaseIndex*> mIndexes;
 		std::unordered_map<ComponentTypeId, std::vector<BaseIndex*>> mIndexesHavingComponent;
 		std::unordered_map<BaseIndex*, std::function<void(ComponentIndexes<ComponentTypeId>& self)>> mIndexRemovalCallbacks;
+		std::unordered_map<BaseIndex*, std::function<void(ComponentIndexes<ComponentTypeId>& from, ComponentIndexes<ComponentTypeId>& to)>> mIndexMoveCallbacks;
 	};
 } // namespace RaccoonEcs
