@@ -24,7 +24,7 @@ namespace RaccoonEcs
 			mFunction.clear();
 		}
 
-		SinglecastDelegate(SinglecastDelegate&& other)
+		SinglecastDelegate(SinglecastDelegate&& other) noexcept
 		{
 			*this = std::move(other);
 		}
@@ -127,7 +127,7 @@ namespace RaccoonEcs
 				mFunctions.emplace_back(newHandle, fn);
 				return newHandle;
 			}
-			return Delegates::Handle();
+			return {};
 		}
 
 		void unbind(Delegates::Handle handle)
