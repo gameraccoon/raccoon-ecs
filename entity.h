@@ -19,9 +19,9 @@ namespace RaccoonEcs
 	public:
 		explicit Entity(EntityId id) : mId(id) {}
 
-		bool operator==(const Entity&) const noexcept = default;
-		bool operator!=(const Entity&) const noexcept = default;
-		bool operator<(Entity b) const noexcept { return mId < b.mId; }
+		bool operator==(const Entity& other) const noexcept { return mId == other.mId;};
+		bool operator!=(const Entity& other) const noexcept { return !(*this == other); };
+		bool operator<(Entity other) const noexcept { return mId < other.mId; }
 
 		[[nodiscard]] EntityId getId() const { return mId; }
 
@@ -43,7 +43,7 @@ namespace RaccoonEcs
 	public:
 		OptionalEntity() = default;
 		// implicit conversion
-		OptionalEntity(Entity entity) : mId(entity.getId()), mIsValid(true) {}
+		OptionalEntity(Entity entity) : mId(entity.getId()), mIsValid(true) {} // NOLINT(*-explicit-constructor)
 		explicit OptionalEntity(Entity::EntityId id) : mId(id), mIsValid(true) {}
 
 		[[nodiscard]] bool isValid() const { return mIsValid; }
@@ -61,8 +61,8 @@ namespace RaccoonEcs
 		}
 
 		// we can't compare two OptionalEntity objects, but can compare them with Entity
-		bool operator==(const Entity& entity) const noexcept { return mIsValid && mId == entity.getId(); };
-		bool operator!=(const Entity& entity) const noexcept { return !(*this == entity); };
+		bool operator==(const Entity& other) const noexcept { return mIsValid && mId == other.getId(); };
+		bool operator!=(const Entity& other) const noexcept { return !(*this == other); };
 		friend bool operator==(const Entity& entity, const OptionalEntity& optionalEntity) noexcept { return optionalEntity == entity; };
 		friend bool operator!=(const Entity& entity, const OptionalEntity& optionalEntity) noexcept { return optionalEntity != entity; };
 

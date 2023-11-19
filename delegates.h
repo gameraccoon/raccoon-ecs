@@ -132,12 +132,16 @@ namespace RaccoonEcs
 
 		void unbind(Delegates::Handle handle)
 		{
-			std::erase_if(
-				mFunctions,
-				[handle](FunctionData& val)
-				{
-					return val.handle == handle;
-				}
+			mFunctions.erase(
+				std::remove_if(
+					mFunctions.begin(),
+					mFunctions.end(),
+					[handle](FunctionData& val)
+					{
+						return val.handle == handle;
+					}
+				),
+				mFunctions.end()
 			);
 		}
 
