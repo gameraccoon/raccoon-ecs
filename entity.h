@@ -60,6 +60,12 @@ namespace RaccoonEcs
 			return mId;
 		}
 
+		// we can't compare two OptionalEntity objects, but can compare them with Entity
+		bool operator==(const Entity& entity) const noexcept { return mIsValid && mId == entity.getId(); };
+		bool operator!=(const Entity& entity) const noexcept { return !(*this == entity); };
+		friend bool operator==(const Entity& entity, const OptionalEntity& optionalEntity) noexcept { return optionalEntity == entity; };
+		friend bool operator!=(const Entity& entity, const OptionalEntity& optionalEntity) noexcept { return optionalEntity != entity; };
+
 	private:
 		Entity::EntityId mId = 0;
 		bool mIsValid = false;
