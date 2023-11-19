@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <string>
 
 #include "error_handling.h"
 #include "component_pool.h"

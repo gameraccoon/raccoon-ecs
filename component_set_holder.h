@@ -4,6 +4,7 @@
 #include <tuple>
 #include <vector>
 #include <memory>
+#include <string>
 
 #include "component_factory.h"
 #include "delegates.h"

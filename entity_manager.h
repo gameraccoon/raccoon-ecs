@@ -5,6 +5,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <memory>
+#include <string>
 
 #include "component_factory.h"
 #include "component_indexes.h"
