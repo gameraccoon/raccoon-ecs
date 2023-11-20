@@ -201,7 +201,7 @@ namespace RaccoonEcs
 		}
 
 		/**
-		 * @brief Removes and desctoys all the components stored in this component set holder
+		 * @brief Removes and destroys all the components stored in this component set holder
 		 */
 		void removeAllComponents()
 		{

@@ -21,9 +21,9 @@ namespace RaccoonEcs
 	public:
 		using PoolGrowStrategyFn = std::function<size_t(size_t)>;
 	public:
-		ComponentPool(size_t defaultChunkSize, bool needPreallocate = false, const PoolGrowStrategyFn& growStategyFn = nullptr) noexcept
+		ComponentPool(size_t defaultChunkSize, bool needPreallocate = false, const PoolGrowStrategyFn& growStrategyFn = nullptr) noexcept
 			: mDefaultChunkSize(defaultChunkSize)
-			, mGrowStrategyFn(growStategyFn)
+			, mGrowStrategyFn(growStrategyFn)
 		{
 			if (needPreallocate)
 			{
@@ -61,7 +61,7 @@ namespace RaccoonEcs
 
 		void releaseComponent(void* component)
 		{
-			// component is a union part of CompoenentSlot, so they have the same address in memory
+			// component is a union part of ComponentSlot, so they have the same address in memory
 			ComponentSlot* slot = static_cast<ComponentSlot*>(component);
 			slot->component.~ComponentType();
 			slot->nextFreeSlot = mNextFreeSlot;
@@ -82,7 +82,7 @@ namespace RaccoonEcs
 
 			~ComponentSlot()
 			{
-				// do nothing. assume that the component was released before destroing the pool
+				// do nothing. assume that the component was released before destroying the pool
 			}
 		};
 

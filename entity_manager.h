@@ -468,11 +468,11 @@ namespace RaccoonEcs
 		template<typename... Components, typename FunctionType, typename... AdditionalData>
 		void forEachComponentSet(FunctionType processor, AdditionalData... data)
 		{
-			const auto& componens = mIndexes.template getComponents<Components...>(mComponents);
+			const auto& components = mIndexes.template getComponents<Components...>(mComponents);
 
-			if (!componens.empty())
+			if (!components.empty())
 			{
-				for (const auto& componentSet : componens)
+				for (const auto& componentSet : components)
 				{
 					std::apply(processor, std::tuple_cat(
 						std::make_tuple(data...),
