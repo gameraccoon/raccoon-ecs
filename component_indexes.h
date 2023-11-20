@@ -393,14 +393,9 @@ namespace RaccoonEcs
 		private:
 			static bool doesEntityHaveAllComponents(const std::vector<const std::vector<void*>*>& componentVectors, size_t i)
 			{
-				for (const std::vector<void*>* componentVector : componentVectors)
-				{
-					if ((*componentVector)[i] == nullptr)
-					{
-						return false;
-					}
-				}
-				return true;
+				return std::all_of(componentVectors.begin(), componentVectors.end(), [i](const std::vector<void*>* componentVector) {
+					return (*componentVector)[i] != nullptr;
+				});
 			}
 
 		private:
