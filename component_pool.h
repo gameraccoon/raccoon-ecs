@@ -21,7 +21,7 @@ namespace RaccoonEcs
 	public:
 		using PoolGrowStrategyFn = std::function<size_t(size_t)>;
 	public:
-		ComponentPool(size_t defaultChunkSize, bool needPreallocate = false, const PoolGrowStrategyFn& growStrategyFn = nullptr) noexcept
+		explicit ComponentPool(size_t defaultChunkSize, bool needPreallocate = false, PoolGrowStrategyFn&& growStrategyFn = nullptr) noexcept
 			: mDefaultChunkSize(defaultChunkSize)
 			, mGrowStrategyFn(growStrategyFn)
 		{
@@ -87,7 +87,7 @@ namespace RaccoonEcs
 		};
 
 	private:
-		size_t getNewChunkSize() const
+		[[nodiscard]] size_t getNewChunkSize() const
 		{
 			if (mAllocatedComponentsCount == 0)
 			{

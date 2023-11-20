@@ -29,7 +29,7 @@ namespace RaccoonEcs
 			*this = std::move(other);
 		}
 
-		SinglecastDelegate& operator=(SinglecastDelegate&& other)
+		SinglecastDelegate& operator=(SinglecastDelegate&& other) noexcept
 		{
 			mFunction = std::move(other.mFunction);
 			other.mFunction.clear();

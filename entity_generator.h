@@ -16,7 +16,7 @@ namespace RaccoonEcs
 
 		[[nodiscard]] virtual Entity::EntityId generateNewEntityId() = 0;
 		virtual void registerEntityId(Entity::EntityId existingEntity) = 0;
-		virtual Entity::EntityId getLastEntityId() const = 0;
+		[[nodiscard]] virtual Entity::EntityId getLastEntityId() const = 0;
 		virtual void setMaxEntityId(Entity::EntityId maxId) = 0;
 	};
 
@@ -35,7 +35,7 @@ namespace RaccoonEcs
 			mMaxEntityId = std::max(mMaxEntityId, existingEntity);
 		}
 
-		Entity::EntityId getLastEntityId() const final
+		[[nodiscard]] Entity::EntityId getLastEntityId() const final
 		{
 			return mMaxEntityId;
 		}
