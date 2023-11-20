@@ -25,15 +25,39 @@ namespace RaccoonEcs
 		ComponentFactoryImpl(ComponentFactoryImpl&&) = delete;
 		ComponentFactoryImpl& operator=(ComponentFactoryImpl&&) = delete;
 
-		template<typename ComponentType>
+		// component flag
+		template<typename ComponentType, std::enable_if_t<std::is_empty_v<ComponentType>, int> = 0>
 		void registerComponent(
-			const size_t defaultChunkSize = std::max(static_cast<size_t>(1), static_cast<size_t>(4096u / sizeof(ComponentType))),
-			const bool needPreallocate = false,
-			const std::function<size_t(size_t)>& poolGrowStrategyFn = nullptr)
+			const size_t = 0,
+			const bool = false,
+			std::function<size_t(size_t)>&& = nullptr)
 		{
 			const ComponentTypeId componentTypeId = ComponentType::GetTypeId();
 
-			auto componentPoolRawPtr = new (std::nothrow) ComponentPool<ComponentType>(defaultChunkSize, needPreallocate, poolGrowStrategyFn);
+			mComponentCreators[componentTypeId] = []{
+				// the component has no data, so we don't need to allocate it
+				static ComponentType component;
+				return &component;
+			};
+			mComponentDeleters[componentTypeId] = [](void*){};
+#ifdef RACCOON_ECS_COPYABLE_COMPONENTS
+			mComponentCloners[componentTypeId] = [](void* component) -> void* {
+				// all instances are mapping to the same memory, so we can just return the pointer
+				return component;
+			};
+#endif // RACCOON_ECS_COPYABLE_COMPONENTS
+		}
+
+		// normal component
+		template<typename ComponentType, std::enable_if_t<!std::is_empty_v<ComponentType>, int> = 0>
+		void registerComponent(
+			const size_t defaultChunkSize = std::max(static_cast<size_t>(1), static_cast<size_t>(4096u / sizeof(ComponentType))),
+			const bool needPreallocate = false,
+			std::function<size_t(size_t)>&& poolGrowStrategyFn = nullptr)
+		{
+			const ComponentTypeId componentTypeId = ComponentType::GetTypeId();
+
+			auto componentPoolRawPtr = new (std::nothrow) ComponentPool<ComponentType>(defaultChunkSize, needPreallocate, std::move(poolGrowStrategyFn));
 			mComponentPools.emplace_back(componentPoolRawPtr);
 
 			mComponentCreators[componentTypeId] = [componentPoolRawPtr]{
