@@ -121,7 +121,7 @@ namespace RaccoonEcs
 
 		void rebuild(const ComponentMap& componentMap)
 		{
-			for (BaseIndex* index : mIndexes)
+			for (auto& [key, index] : mIndexes)
 			{
 				index->repopulate(componentMap);
 			}
