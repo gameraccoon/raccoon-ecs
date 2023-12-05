@@ -293,7 +293,7 @@ namespace RaccoonEcs
 						// find the position in the sparse array of the last entity in the dense array
 						const size_t lastEntitySparseIdx = mDenseArray.matchingEntityIndexes.back(); // 3
 						// swap the swapped entity with the last entity in the dense array
-						std::swap(mDenseArray.matchingEntityIndexes[swappedEntityDenseIdx], mDenseArray.matchingEntityIndexes[lastEntitySparseIdx]);
+						std::swap(mDenseArray.matchingEntityIndexes[swappedEntityDenseIdx], mDenseArray.matchingEntityIndexes[mDenseArray.matchingEntityIndexes.size() - 1]);
 						// pop the last entity from the dense array
 						mDenseArray.matchingEntityIndexes.pop_back();
 
