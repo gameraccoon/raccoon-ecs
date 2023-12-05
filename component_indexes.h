@@ -408,7 +408,7 @@ namespace RaccoonEcs
 		template<typename... Components>
 		static std::unordered_map<ComponentIndexes<ComponentTypeId>*, Index<Components...>>& getIndexMap()
 		{
-			static std::unordered_map<ComponentIndexes<ComponentTypeId>*, Index<Components...>> sIndexes;
+			thread_local std::unordered_map<ComponentIndexes<ComponentTypeId>*, Index<Components...>> sIndexes;
 			return sIndexes;
 		}
 
