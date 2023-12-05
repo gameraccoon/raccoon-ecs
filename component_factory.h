@@ -91,8 +91,7 @@ namespace RaccoonEcs
 				return it->second;
 			}
 
-			using std::to_string;
-			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + to_string(typeId) + "'");
+			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + toString(typeId) + "'");
 			return nullptr;
 		}
 
@@ -104,8 +103,7 @@ namespace RaccoonEcs
 				return it->second;
 			}
 
-			using std::to_string;
-			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + to_string(typeId) + "'");
+			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + toString(typeId) + "'");
 			return nullptr;
 		}
 
@@ -118,8 +116,7 @@ namespace RaccoonEcs
 				return it->second;
 			}
 
-			using std::to_string;
-			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + to_string(typeId) + "'");
+			RACCOON_ECS_ERROR(std::string("Unknown component type: '") + toString(typeId) + "'");
 			return nullptr;
 		}
 #endif // RACCOON_ECS_COPYABLE_COMPONENTS

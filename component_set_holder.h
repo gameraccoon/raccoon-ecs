@@ -136,8 +136,7 @@ namespace RaccoonEcs
 			}
 			else
 			{
-				using std::to_string;
-				RACCOON_ECS_ERROR("Trying to add component of type " + to_string(typeId) + " that already exists, this will result in a memory leak");
+				RACCOON_ECS_ERROR("Trying to add component of type " + toString(typeId) + " that already exists, this will result in a memory leak");
 			}
 		}
 
