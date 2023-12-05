@@ -385,7 +385,7 @@ namespace RaccoonEcs
 			size_t hash = 0;
 			for (ComponentTypeId typeId : componentTypes)
 			{
-				hash ^= typeId;
+				hash ^= std::hash<ComponentTypeId>{}(typeId);
 				hash = std::rotl(hash, 5);
 			}
 			return hash;
