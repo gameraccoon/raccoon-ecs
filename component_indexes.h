@@ -1,12 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <bit>
-#include <functional>
 #include <limits>
 #include <memory>
 #include <tuple>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "component_map.h"
@@ -44,49 +43,14 @@ namespace RaccoonEcs
 		ComponentIndexes(const ComponentIndexes&)
 			: ComponentIndexes()
 		{}
-
-		ComponentIndexes(ComponentIndexes&& other) noexcept
-			: mIndexes(std::move(other.mIndexes))
-			, mIndexesHavingComponent(std::move(other.mIndexesHavingComponent))
-			, mIndexRemovalCallbacks(std::move(other.mIndexRemovalCallbacks))
-			, mIndexMoveCallbacks(std::move(other.mIndexMoveCallbacks))
-		{
-			for (auto& callback : mIndexMoveCallbacks)
-			{
-				callback.second(other, *this);
-			}
-		}
-
+		ComponentIndexes(ComponentIndexes&& other) noexcept = default;
 		ComponentIndexes& operator=(const ComponentIndexes&)
 		{
 			clear();
 			return *this;
 		}
-
-		ComponentIndexes& operator=(ComponentIndexes&& other) noexcept
-		{
-			for (auto& callback : mIndexRemovalCallbacks)
-			{
-				callback.second(*this);
-			}
-			mIndexes = std::move(other.mIndexes);
-			mIndexesHavingComponent = std::move(other.mIndexesHavingComponent);
-			mIndexRemovalCallbacks = std::move(other.mIndexRemovalCallbacks);
-			mIndexMoveCallbacks = std::move(other.mIndexMoveCallbacks);
-			for (auto& callback : mIndexMoveCallbacks)
-			{
-				callback.second(other, *this);
-			}
-			return *this;
-		}
-
-		~ComponentIndexes()
-		{
-			for (auto& callback : mIndexRemovalCallbacks)
-			{
-				callback.second(*this);
-			}
-		}
+		ComponentIndexes& operator=(ComponentIndexes&& other) noexcept = default;
+		~ComponentIndexes() = default;
 
 		void onComponentAdded(ComponentTypeId typeId, size_t entityIndex, const ComponentMap& componentMap)
 		{
@@ -112,7 +76,7 @@ namespace RaccoonEcs
 
 		void onEntityRemoved(size_t removedEntityIndex, size_t swappedEntityIndex)
 		{
-			for (BaseIndex* index : mIndexes)
+			for (auto& [key, index] : mIndexes)
 			{
 				index->removeEntityWithSwap(removedEntityIndex, swappedEntityIndex);
 			}
@@ -147,7 +111,7 @@ namespace RaccoonEcs
 
 		void clear()
 		{
-			for (BaseIndex* index : mIndexes)
+			for (auto& [key, index] : mIndexes)
 			{
 				index->clear();
 			}
@@ -406,41 +370,81 @@ namespace RaccoonEcs
 
 	private:
 		template<typename... Components>
-		static std::unordered_map<ComponentIndexes<ComponentTypeId>*, Index<Components...>>& getIndexMap()
+		static const std::vector<ComponentTypeId>& getComponentTypes()
 		{
-			thread_local std::unordered_map<ComponentIndexes<ComponentTypeId>*, Index<Components...>> sIndexes;
-			return sIndexes;
+			static const std::vector<ComponentTypeId> componentTypes = []{
+				std::vector<ComponentTypeId> componentTypes{Components::GetTypeId()...};
+				std::sort(componentTypes.begin(), componentTypes.end());
+				return componentTypes;
+			}();
+			return componentTypes;
 		}
+
+		static size_t calculateHash(const std::vector<ComponentTypeId>& componentTypes)
+		{
+			size_t hash = 0;
+			for (ComponentTypeId typeId : componentTypes)
+			{
+				hash ^= typeId;
+				hash = std::rotl(hash, 5);
+			}
+			return hash;
+		}
+
+		struct IndexKey
+		{
+			const size_t hash;
+			const std::vector<ComponentTypeId>& componentTypes;
+
+			template<typename... Components>
+			IndexKey(const std::vector<ComponentTypeId>& componentTypes)
+				: hash(calculateHash(componentTypes))
+				, componentTypes(componentTypes)
+			{}
+
+			template<typename... Components>
+			static IndexKey Create()
+			{
+				return IndexKey(getComponentTypes<Components...>());
+			}
+
+			bool operator==(const IndexKey& other) const
+			{
+				return hash == other.hash && componentTypes == other.componentTypes;
+			}
+
+			struct HashFunction
+			{
+				size_t operator()(const IndexKey& key) const
+				{
+					return key.hash;
+				}
+			};
+		};
 
 		template<typename... Components>
 		const Index<Components...>& getOrCreateIndex(const ComponentMap& componentMap)
 		{
-			Index<Components...>& index = getIndexMap<Components...>()[this];
-			if (!index.isPopulated())
+			static const IndexKey key = IndexKey::template Create<Components...>();
+			if (auto it = mIndexes.find(key); it != mIndexes.end())
 			{
-				index.populate(componentMap);
-				mIndexes.push_back(&index);
-				for (ComponentTypeId typeId : index.getComponentTypes())
-				{
-					mIndexesHavingComponent[typeId].push_back(&index);
-				}
-				// the callback may already exist if we cleaned up the index before
-				mIndexRemovalCallbacks.try_emplace(&index, [](ComponentIndexes<ComponentTypeId>& self) {
-					getIndexMap<Components...>().erase(&self);
-				});
-				mIndexMoveCallbacks.try_emplace(&index, [](ComponentIndexes<ComponentTypeId>& from, ComponentIndexes<ComponentTypeId>& to) {
-					auto& indexMap = getIndexMap<Components...>();
-					indexMap[&to] = std::move(indexMap[&from]);
-					indexMap.erase(&from);
-				});
+				return *static_cast<Index<Components...>*>(it->second.get());
 			}
+
+			std::unique_ptr<Index<Components...>> indexPtr = std::make_unique<Index<Components...>>();
+			Index<Components...>& index = *indexPtr;
+			index.populate(componentMap);
+			for (ComponentTypeId typeId : index.getComponentTypes())
+			{
+				mIndexesHavingComponent[typeId].push_back(&index);
+			}
+
+			mIndexes.emplace(key, std::move(indexPtr));
 			return index;
 		}
 
 	private:
-		std::vector<BaseIndex*> mIndexes;
+		std::unordered_map<IndexKey, std::unique_ptr<BaseIndex>, typename IndexKey::HashFunction> mIndexes;
 		std::unordered_map<ComponentTypeId, std::vector<BaseIndex*>> mIndexesHavingComponent;
-		std::unordered_map<BaseIndex*, std::function<void(ComponentIndexes<ComponentTypeId>& self)>> mIndexRemovalCallbacks;
-		std::unordered_map<BaseIndex*, std::function<void(ComponentIndexes<ComponentTypeId>& from, ComponentIndexes<ComponentTypeId>& to)>> mIndexMoveCallbacks;
 	};
 } // namespace RaccoonEcs
