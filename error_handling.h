@@ -25,6 +25,13 @@ namespace RaccoonEcs
 	{
 		return value;
 	}
+
+	// for custom types it is expected that to_string function is defined in the global namespace
+	template<typename T>
+	inline std::string toString(const T& value)
+	{
+		return to_string(value);
+	}
 } // namespace RaccoonEcs
 
 #define RACCOON_ECS_ERROR(message) RaccoonEcs::gErrorHandler(message)
