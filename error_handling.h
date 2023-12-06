@@ -9,28 +9,27 @@ namespace RaccoonEcs
 {
 	inline std::function<void(const std::string)> gErrorHandler = [](const std::string&){};
 
-	template<typename T, std::enable_if_t<std::is_enum_v<T> || std::is_arithmetic_v<T>, int> = 0>
+	template<typename T>
 	std::string toString(const T& value)
 	{
 		using std::to_string;
+
+		// to support printing your type create a function with the following signature:
+		// std::string to_string(const YourType& value);
+		// in the namespace of your type, or in the global namespace
 		return to_string(value);
 	}
 
-	inline std::string toString(const std::string& value)
+	template<>
+	inline std::string toString<>(const std::string& value)
 	{
 		return value;
 	}
 
-	inline std::string toString(const char* value)
+	template<>
+	inline std::string toString<>(const char* const& value)
 	{
 		return value;
-	}
-
-	// for custom types it is expected that to_string function is defined in the global namespace
-	template<typename T>
-	inline std::string toString(const T& value)
-	{
-		return to_string(value);
 	}
 } // namespace RaccoonEcs
 
