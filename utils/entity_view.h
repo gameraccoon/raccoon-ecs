@@ -1,8 +1,8 @@
 #pragma once
 
-#include "entity.h"
-#include "entity_manager.h"
-#include "msvc_fix.h"
+#include "../entity.h"
+#include "../entity_manager.h"
+#include "../msvc_fix.h"
 
 namespace RaccoonEcs
 {
