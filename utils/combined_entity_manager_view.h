@@ -57,6 +57,15 @@ namespace RaccoonEcs
 		}
 
 		template<typename... Components, typename DataVector>
+		void getComponentsWithEntities(DataVector& inOutComponents)
+		{
+			for (Record& record : mRecords)
+			{
+				record.entityManager.get().TEMPLATE_MSVC_FIX getComponentsWithEntities<Components...>(inOutComponents);
+			}
+		}
+
+		template<typename... Components, typename DataVector>
 		void getComponentsWithExtraData(DataVector& inOutComponents)
 		{
 			for (Record& record : mRecords)
@@ -80,6 +89,15 @@ namespace RaccoonEcs
 			for (Record& record : mRecords)
 			{
 				record.entityManager.get().TEMPLATE_MSVC_FIX forEachComponentSet<Components...>(processor);
+			}
+		}
+
+		template<typename... Components, typename FunctionType>
+		void forEachComponentSetWithEntity(FunctionType processor)
+		{
+			for (Record& record : mRecords)
+			{
+				record.entityManager.get().TEMPLATE_MSVC_FIX forEachComponentSetWithEntity<Components...>(processor);
 			}
 		}
 
@@ -109,11 +127,18 @@ namespace RaccoonEcs
 			}
 		}
 
+		template<typename TypedComponent>
 		void getAllEntityComponents(Entity entity, std::vector<TypedComponent>& outComponents)
 		{
 			for (Record& record : mRecords)
 			{
 				record.entityManager.get().TEMPLATE_MSVC_FIX getAllEntityComponents(entity, outComponents);
+
+				// if components are not empty, then we have found the entity
+				if (!outComponents.empty())
+				{
+					return;
+				}
 			}
 		}
 
