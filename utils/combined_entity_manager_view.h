@@ -23,22 +23,22 @@ namespace RaccoonEcs
 		using RecordsVector = std::vector<Record>;
 
 	public:
-		CombinedEntityManagerView(std::span<Record> entityManagers)
+		explicit CombinedEntityManagerView(std::span<Record> entityManagers)
 			: mRecords(entityManagers.begin(), entityManagers.end())
 		{
 		}
 
-		CombinedEntityManagerView(const std::vector<Record>& entityManagers)
+		explicit CombinedEntityManagerView(const std::vector<Record>& entityManagers)
 			: mRecords(entityManagers)
 		{
 		}
 
-		CombinedEntityManagerView(std::vector<Record>&& entityManagers)
+		explicit CombinedEntityManagerView(std::vector<Record>&& entityManagers)
 			: mRecords(std::move(entityManagers))
 		{
 		}
 
-		CombinedEntityManagerView(const std::vector<EntityManagerRef>& entityManagers)
+		explicit CombinedEntityManagerView(const std::vector<EntityManagerRef>& entityManagers)
 		{
 			mRecords.reserve(entityManagers.size());
 			for (auto& entityManager : entityManagers)
@@ -46,6 +46,12 @@ namespace RaccoonEcs
 				mRecords.push_back({entityManager, nullptr});
 			}
 		}
+
+		CombinedEntityManagerView(const CombinedEntityManagerView&) = default;
+		CombinedEntityManagerView(CombinedEntityManagerView&&) = default;
+		CombinedEntityManagerView& operator=(const CombinedEntityManagerView&) = default;
+		CombinedEntityManagerView& operator=(CombinedEntityManagerView&&) = default;
+		~CombinedEntityManagerView() = default;
 
 		template<typename... Components, typename DataVector>
 		void getComponents(DataVector& inOutComponents)
