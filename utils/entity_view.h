@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../entity.h"
-#include "../entity_manager.h"
 #include "../msvc_fix.h"
 
 namespace RaccoonEcs
@@ -9,12 +8,10 @@ namespace RaccoonEcs
 	/**
 	 * @brief Non-owning wrapper around entity and its current entity manager
 	 */
-	template <typename ComponentTypeId>
+	template <typename EntityManager>
 	class EntityViewImpl
 	{
 	public:
-		using EntityManager = EntityManagerImpl<ComponentTypeId>;
-
 		EntityViewImpl(Entity entity, EntityManager& manager)
 			: mEntity(entity)
 			, mManager(manager)

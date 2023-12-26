@@ -5,6 +5,8 @@
 
 #include "../msvc_fix.h"
 
+#include "entity_view.h"
+
 namespace RaccoonEcs
 {
 	// A container that allows to perform operations over entities from multiple entity managers in a single call
@@ -13,6 +15,7 @@ namespace RaccoonEcs
 	{
 	public:
 		using EntityManagerRef = std::reference_wrapper<EntityManager>;
+		using EntityView = EntityViewImpl<EntityManager>;
 
 		struct Record
 		{
@@ -103,7 +106,11 @@ namespace RaccoonEcs
 		{
 			for (Record& record : mRecords)
 			{
-				record.entityManager.get().TEMPLATE_MSVC_FIX forEachComponentSetWithEntity<Components...>(processor);
+				record.entityManager.get().TEMPLATE_MSVC_FIX forEachComponentSetWithEntity<Components...>(
+					[&processor, &entityManager = record.entityManager.get()](Entity entity, Components*... components) mutable -> void{
+						processor(EntityView{entity, entityManager}, components...);
+					}
+				);
 			}
 		}
 
@@ -121,7 +128,12 @@ namespace RaccoonEcs
 		{
 			for (Record& record : mRecords)
 			{
-				record.entityManager.get().TEMPLATE_MSVC_FIX forEachComponentSetWithEntity<Components...>(processor, record.extraData);
+				record.entityManager.get().TEMPLATE_MSVC_FIX forEachComponentSetWithEntity<Components...>(
+					[&processor, &entityManager = record.entityManager.get()](ExtraData data, Entity entity, Components*... components) mutable -> void{
+						processor(data, EntityView{entity, entityManager}, components...);
+					},
+					record.extraData
+				);
 			}
 		}
 
