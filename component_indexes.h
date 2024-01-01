@@ -228,11 +228,12 @@ namespace RaccoonEcs
 
 			void removeEntityWithSwap(size_t removedEntityIndex, size_t swappedEntityIndex) final
 			{
+				RACCOON_ECS_ASSERT(removedEntityIndex <= swappedEntityIndex, "Removed entity index should be less or equal to swapped entity index");
 				// if the swapped entity was in the index
 				if (swappedEntityIndex < mSparseArray.size() && mSparseArray[swappedEntityIndex] != BaseIndex::InvalidIndex)
 				{
 					// if the removed entity was in the index as well
-					if (removedEntityIndex < mSparseArray.size() && mSparseArray[removedEntityIndex] != BaseIndex::InvalidIndex)
+					if (mSparseArray[removedEntityIndex] != BaseIndex::InvalidIndex)
 					{
 						// update the index of the removed entity to point to the swapped entity
 						// removedEntityIndex = 1; swappedEntityIndex = 4
@@ -278,9 +279,11 @@ namespace RaccoonEcs
 					}
 					else
 					{
-						// removed entity was not in the index, just update the index of the swapped entity
-						mSparseArray[swappedEntityIndex] = mSparseArray[removedEntityIndex];
-						mSparseArray[removedEntityIndex] = BaseIndex::InvalidIndex;
+						// removed entity was not in the index, link the swapped entity to the removed entity's index
+						const size_t swappedEntityDenseIdx = mSparseArray[swappedEntityIndex];
+						mSparseArray[removedEntityIndex] = mSparseArray[swappedEntityIndex];
+						mSparseArray[swappedEntityIndex] = BaseIndex::InvalidIndex;
+						mDenseArray.matchingEntityIndexes[swappedEntityDenseIdx] = removedEntityIndex;
 					}
 				}
 				else
