@@ -36,6 +36,12 @@ namespace RaccoonEcs
 			return mManager.template getEntityComponents<Components...>(mEntity);
 		}
 
+		template<typename Component>
+		bool hasComponent()
+		{
+			return mManager.template doesEntityHaveComponent<Component>(mEntity);
+		}
+
 		template<typename ComponentType>
 		ComponentType* scheduleAddComponent()
 		{
