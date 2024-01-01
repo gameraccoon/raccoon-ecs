@@ -88,15 +88,15 @@ namespace RaccoonEcs
 			const EntityIndex oldEntityIdx = entityToRemoveIdxItr->second;
 
 			// we need to swap the removed entity with the latest
-			const EntityIndex entityIndexToRemove = mEntities.size() - 1;
+			const EntityIndex lastEntityIndex = mEntities.size() - 1;
 
 			mEntityIndexMap.erase(entityToRemove.getId());
 
-			if (oldEntityIdx != entityIndexToRemove)
+			if (oldEntityIdx != lastEntityIndex)
 			{
 				// relink maps
-				const Entity swappedEntity = mEntities[entityIndexToRemove];
-				std::swap(mEntities[oldEntityIdx], mEntities[entityIndexToRemove]);
+				const Entity swappedEntity = mEntities[lastEntityIndex];
+				std::swap(mEntities[oldEntityIdx], mEntities[lastEntityIndex]);
 				mEntityIndexMap[swappedEntity.getId()] = oldEntityIdx;
 			}
 			mEntities.pop_back();
@@ -116,15 +116,15 @@ namespace RaccoonEcs
 					}
 
 					// if the vector contains the last entity
-					if (entityIndexToRemove < componentVector.second.size() && oldEntityIdx != entityIndexToRemove)
+					if (lastEntityIndex < componentVector.second.size() && oldEntityIdx != lastEntityIndex)
 					{
 						// move it to the freed space
-						std::swap(componentVector.second[oldEntityIdx], componentVector.second[entityIndexToRemove]);
+						std::swap(componentVector.second[oldEntityIdx], componentVector.second[lastEntityIndex]);
 					}
 				}
 			}
 
-			mIndexes.onEntityRemoved(oldEntityIdx, entityIndexToRemove);
+			mIndexes.onEntityRemoved(oldEntityIdx, lastEntityIndex);
 
 			onEntityRemoved.broadcast();
 		}
@@ -559,18 +559,24 @@ namespace RaccoonEcs
 
 		/**
 		 * @brief Transfers the given entity together with its components to another manager
-		 * @param otherManager  The manager to which the entity will be transfer to
+		 * @param newManager  The manager to which the entity will be transfer to
 		 * @param entity  The entity that will be transferred
 		 *
 		 * The components are guaranteed not to be moved in the memory.
 		 */
-		void transferEntityTo(EntityManager& otherManager, Entity entity)
+		void transferEntityTo(EntityManager& newManager, Entity entity)
 		{
-			if (this == &otherManager)
+			if (this == &newManager)
 			{
 				RACCOON_ECS_ERROR("Transferring entity to the same manager. This should never happen");
 				return;
 			}
+
+			RACCOON_ECS_ASSERT(&mComponentFactory.get() == &newManager.mComponentFactory.get(),
+				"Trying to transfer entity between managers with different component factories, this is not supported yet");
+
+			RACCOON_ECS_ASSERT(&mEntityGenerator.get() == &newManager.mEntityGenerator.get(),
+				"Trying to transfer entity between managers with different entity generators, this may create collisions");
 
 			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
 			if (entityIdxItr == mEntityIndexMap.end())
@@ -579,51 +585,49 @@ namespace RaccoonEcs
 				return;
 			}
 
-			[[maybe_unused]] const auto insertionResult = otherManager.mEntityIndexMap.try_emplace(entity.getId(), otherManager.mEntities.size());
+			[[maybe_unused]] const auto insertionResult = newManager.mEntityIndexMap.try_emplace(entity.getId(), newManager.mEntities.size());
 			RACCOON_ECS_ASSERT(insertionResult.second, "EntityId is not unique, two entities collided during transfer. Make sure all entity managers use one shared EntityGenerator");
-			otherManager.mEntities.push_back(entity);
-
-			const EntityIndex entityToRemoveIdx = mEntities.size() - 1;
+			newManager.mEntities.push_back(entity);
 
 			const EntityIndex oldEntityIdx = entityIdxItr->second;
+			const EntityIndex lastEntityIdx = mEntities.size() - 1;
 
 			for (auto& componentVector : mComponents)
 			{
 				if (oldEntityIdx < componentVector.second.size())
 				{
-					// add the element to the new manager
+					// transfer the component if it exists
 					if (componentVector.second[oldEntityIdx] != nullptr)
 					{
-						otherManager.addComponent(
+						newManager.addComponent(
 							entity,
 							componentVector.second[oldEntityIdx],
 							componentVector.first
 						);
+
+						// remove the component from the old manager
+						componentVector.second[oldEntityIdx] = nullptr;
 					}
 
-					// remove the element from the old manager
-					componentVector.second[oldEntityIdx] = nullptr;
-
-					// if the vector contains the last entity
-					if (entityToRemoveIdx < componentVector.second.size() && oldEntityIdx != entityToRemoveIdx)
+					// move components of the last entity to the freed space
+					if (lastEntityIdx < componentVector.second.size() && oldEntityIdx != lastEntityIdx)
 					{
-						// move it to the freed space
-						std::swap(componentVector.second[oldEntityIdx], componentVector.second[entityToRemoveIdx]);
+						std::swap(componentVector.second[oldEntityIdx], componentVector.second[lastEntityIdx]);
 					}
 				}
 			}
 
 			mEntityIndexMap.erase(entity.getId());
 
-			if (oldEntityIdx != entityToRemoveIdx)
+			// swap with the last entity
+			if (oldEntityIdx != lastEntityIdx)
 			{
-				// relink maps
-				const Entity entityToSwap = mEntities[entityToRemoveIdx];
+				const Entity entityToSwap = mEntities[lastEntityIdx];
 				mEntityIndexMap[entityToSwap.getId()] = oldEntityIdx;
-				std::swap(mEntities[entityToRemoveIdx], mEntities[oldEntityIdx]);
+				std::swap(mEntities[lastEntityIdx], mEntities[oldEntityIdx]);
 			}
 			mEntities.pop_back();
-			mIndexes.onEntityRemoved(oldEntityIdx, entityToRemoveIdx);
+			mIndexes.onEntityRemoved(oldEntityIdx, lastEntityIdx);
 		}
 
 		/**
@@ -853,7 +857,7 @@ namespace RaccoonEcs
 			}
 			else
 			{
-				RACCOON_ECS_ERROR("Trying to add a component when the entity already has one of the same type. This will result in UB");
+				RACCOON_ECS_ERROR(std::string("Trying to add a component when the entity already has one of the same type. This will result in UB, entity: ") + std::to_string(mEntities[entityIdx].getId()) + ", component: " + toString(typeId));
 			}
 			mIndexes.onComponentAdded(typeId, entityIdx, mComponents);
 		}
