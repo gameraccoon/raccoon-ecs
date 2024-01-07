@@ -230,52 +230,78 @@ namespace RaccoonEcs
 			{
 				RACCOON_ECS_ASSERT(removedEntityIndex <= swappedEntityIndex, "Removed entity index should be less or equal to swapped entity index");
 				// if the swapped entity was in the index
-				if (swappedEntityIndex < mSparseArray.size() && mSparseArray[swappedEntityIndex] != BaseIndex::InvalidIndex)
+				if (swappedEntityIndex < mSparseArray.size() && mSparseArray[swappedEntityIndex] != BaseIndex::InvalidIndex && removedEntityIndex != swappedEntityIndex)
 				{
 					// if the removed entity was in the index as well
 					if (mSparseArray[removedEntityIndex] != BaseIndex::InvalidIndex)
 					{
 						// update the index of the removed entity to point to the swapped entity
+
+						// Example1:
 						// removedEntityIndex = 1; swappedEntityIndex = 4
 						// Before:
 						// Sparse array
 						// [-1, >0<, -1, 2, (1), -1]
 						// Dense array (indexes)
-						// [>1<, 4, 3]
+						// [>1<, (4), 3]
 						// Dense array (components)
-						// [>A<, B, C]
+						// [>A<, (B), C]
 						// After:
 						// Sparse array
-						// [-1, (0), -1, 1, -1, -1]
+						// [-1, (1), -1, 0, -1, -1]
 						// Dense array (indexes)
-						// [1, 3] -> pop 4
+						// [3, (1)] -> pop 4
 						// Dense array (components)
-						// [B, C] -> pop A
+						// [C, (B)] -> pop A
+
+						// Example2:
+						// removedEntityIndex = 0; swappedEntityIndex = 1
+						// Before:
+						// Sparse array
+						// [>0<, (1)]
+						// Dense array (indexes)
+						// [>0<, (1)]
+						// Dense array (components)
+						// [>A<, (B)]
+						// After:
+						// Sparse array
+						// [0, -1]
+						// Dense array (indexes)
+						// [(0)] -> pop 0
+						// Dense array (components)
+						// [(B)] -> pop A
 
 						// find the positions in the dense array of the removed and swapped entities
-						const size_t removedEntityDenseIdx = mSparseArray[removedEntityIndex]; // 0
-						const size_t swappedEntityDenseIdx = mSparseArray[swappedEntityIndex]; // 1
+						const size_t removedEntityDenseIdx = mSparseArray[removedEntityIndex];
+						const size_t swappedEntityDenseIdx = mSparseArray[swappedEntityIndex];
 						// find the position in the sparse array of the last entity in the dense array
-						const size_t lastEntitySparseIdx = mDenseArray.matchingEntityIndexes.back(); // 3
-						// swap the swapped entity with the last entity in the dense array
-						std::swap(mDenseArray.matchingEntityIndexes[swappedEntityDenseIdx], mDenseArray.matchingEntityIndexes[mDenseArray.matchingEntityIndexes.size() - 1]);
-						// pop the last entity from the dense array
-						mDenseArray.matchingEntityIndexes.pop_back();
+						const size_t lastEntitySparseIdx = mDenseArray.matchingEntityIndexes.back();
+						// save index of the last entity in the dense array
+						const size_t lastDenseIdx = mDenseArray.matchingEntityIndexes.size() - 1;
 
-						// update the index of the last entity in the sparse array to point to the swapped entity
-						mSparseArray[lastEntitySparseIdx] = swappedEntityDenseIdx;
-						// remove the swapped entity from the sparse array
-						mSparseArray[swappedEntityIndex] = BaseIndex::InvalidIndex;
-
-						// for dense arrays of components, swap the removed entity with the last entity in the dense array
-						std::swap(mDenseArray.cachedComponents[removedEntityDenseIdx], mDenseArray.cachedComponents.back());
-						// pop the last entity from the dense array
+						// move the components from the end of the dense array to the position of the removed entity
+						mDenseArray.cachedComponents[removedEntityDenseIdx] = mDenseArray.cachedComponents[lastDenseIdx];
+						// remove the last element from the dense array of components
 						mDenseArray.cachedComponents.pop_back();
-						// swap the removed entity with the swapped entity in the sparse array
-						if (mDenseArray.cachedComponents.size() != swappedEntityDenseIdx)
+
+						// relink the dense and sparse array elements based on whether the swapped
+						// entity was the last element in the dense array or not
+						if (lastEntitySparseIdx == swappedEntityIndex)
 						{
-							std::swap(mDenseArray.cachedComponents[swappedEntityDenseIdx], mDenseArray.cachedComponents[removedEntityDenseIdx]);
+							RACCOON_ECS_ASSERT(lastDenseIdx == swappedEntityDenseIdx, "Some inconsistency in the indexes");
+							mDenseArray.matchingEntityIndexes[removedEntityDenseIdx] = removedEntityIndex;
 						}
+						else
+						{
+							RACCOON_ECS_ASSERT(lastDenseIdx != swappedEntityDenseIdx, "Some inconsistency in the indexes");
+							mDenseArray.matchingEntityIndexes[removedEntityDenseIdx] = lastEntitySparseIdx;
+							mDenseArray.matchingEntityIndexes[swappedEntityDenseIdx] = removedEntityIndex;
+							mSparseArray[lastEntitySparseIdx] = removedEntityDenseIdx;
+							mSparseArray[removedEntityIndex] = swappedEntityDenseIdx;
+						}
+
+						mDenseArray.matchingEntityIndexes.pop_back();
+						mSparseArray[swappedEntityIndex] = BaseIndex::InvalidIndex;
 					}
 					else
 					{
