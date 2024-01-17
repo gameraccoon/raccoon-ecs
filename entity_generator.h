@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "entity.h"
 
 namespace RaccoonEcs
@@ -14,38 +16,39 @@ namespace RaccoonEcs
 		EntityGenerator(EntityGenerator&&) = delete;
 		EntityGenerator& operator=(EntityGenerator&&) = delete;
 
-		[[nodiscard]] virtual Entity::EntityId generateNewEntityId() = 0;
-		virtual void registerEntityId(Entity::EntityId existingEntity) = 0;
-		[[nodiscard]] virtual Entity::EntityId getLastEntityId() const = 0;
-		virtual void setMaxEntityId(Entity::EntityId maxId) = 0;
-	};
-
-	class IncrementalEntityGenerator : public EntityGenerator
-	{
-	public:
-		[[nodiscard]] Entity::EntityId generateNewEntityId() final
+		void preallocateForMaxEntitiesCount(size_t count)
 		{
-			// 64 bit size will overflow if we create 1 billion entities per second
-			// during 292 years, so I assume there's no need to check for overflow
-			return ++mMaxEntityId;
+			mEntityVersions.reserve(count);
+			mFreeEntityIds.reserve(count);
 		}
 
-		void registerEntityId(Entity::EntityId existingEntity) final
+		[[nodiscard]] Entity generateNewEntity()
 		{
-			mMaxEntityId = std::max(mMaxEntityId, existingEntity);
+			if (mFreeEntityIds.empty())
+			{
+				mEntityVersions.emplace_back(0);
+				return Entity(mEntityVersions.size() - 1, 0);
+			}
+			else
+			{
+				size_t freeEntityId = mFreeEntityIds.back();
+				mFreeEntityIds.pop_back();
+				return Entity(freeEntityId, mEntityVersions[freeEntityId]);
+			}
 		}
 
-		[[nodiscard]] Entity::EntityId getLastEntityId() const final
+		void removeEntity(Entity entity)
 		{
-			return mMaxEntityId;
-		}
-
-		void setMaxEntityId(Entity::EntityId maxId) final
-		{
-			mMaxEntityId = maxId;
+			const Entity::Version newVersion = ++mEntityVersions[entity.getRawId()];
+			// if we hit zero, we used up all the versions for this entity id, skip it
+			if (newVersion != 0)
+			{
+				mFreeEntityIds.push_back(entity.getRawId());
+			}
 		}
 
 	private:
-		Entity::EntityId mMaxEntityId = 0;
+		std::vector<Entity::Version> mEntityVersions;
+		std::vector<size_t> mFreeEntityIds;
 	};
 } // namespace RaccoonEcs

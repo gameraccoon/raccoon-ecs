@@ -12,7 +12,6 @@
 #include "component_map.h"
 #include "delegates.h"
 #include "entity.h"
-#include "entity_generator.h"
 #include "error_handling.h"
 #include "typed_component.h"
 
@@ -27,16 +26,12 @@ namespace RaccoonEcs
 		using ConstTypedComponent = ConstTypedComponentImpl<ComponentTypeId>;
 		using ComponentMap = ComponentMapImpl<ComponentTypeId>;
 
-		using EntityIndex = size_t;
-
 	public:
 		/**
 		 * @param componentFactory  Should be a reference to a ComponentFactory object that has longer lifetime than this EntityManager
-		 * @param entityGenerator  Should be a reference to an EntityGenerator object that has longer lifetime than this EntityManager
 		 */
-		EntityManagerImpl(const ComponentFactory& componentFactory, EntityGenerator& entityGenerator)
+		EntityManagerImpl(const ComponentFactory& componentFactory)
 			: mComponentFactory(componentFactory)
-			, mEntityGenerator(entityGenerator)
 		{}
 
 		~EntityManagerImpl()
@@ -46,7 +41,7 @@ namespace RaccoonEcs
 
 #ifdef RACCOON_ECS_COPYABLE_COMPONENTS
 		explicit EntityManagerImpl(const EntityManagerImpl& other)
-			: EntityManagerImpl(other.mComponentFactory, other.mEntityGenerator)
+			: EntityManagerImpl(other.mComponentFactory)
 		{
 			copyEntitiesFrom(other);
 		}
@@ -63,12 +58,24 @@ namespace RaccoonEcs
 		 */
 		Entity addEntity()
 		{
-			const Entity::EntityId id = mEntityGenerator.get().generateNewEntityId();
-			EntityIndex newEntityIndex = mEntities.size();
-			mEntities.emplace_back(id);
-			mEntityIndexMap.emplace(id, newEntityIndex);
+			Entity::RawId rawEntityId = 0;
+			if (mFreeEntityIds.empty())
+			{
+				RACCOON_ECS_ASSERT(mEntityVersions.size() == mEntityExistanceFlags.size(), "Inconsistent entity vectors");
+				mEntityVersions.push_back(0);
+				mEntityExistanceFlags.push_back(true);
+				rawEntityId = static_cast<Entity::RawId>(mEntityVersions.size() - 1);
+			}
+			else
+			{
+				size_t freeEntityId = mFreeEntityIds.back();
+				mFreeEntityIds.pop_back();
+				mEntityExistanceFlags[freeEntityId] = true;
+				rawEntityId = freeEntityId;
+			}
+
 			onEntityAdded.broadcast();
-			return Entity(id);
+			return Entity{rawEntityId, mEntityVersions[rawEntityId]};
 		}
 
 		/**
@@ -78,55 +85,49 @@ namespace RaccoonEcs
 		 */
 		void removeEntity(Entity entityToRemove)
 		{
-			const auto entityToRemoveIdxItr = mEntityIndexMap.find(entityToRemove.getId());
-			if (entityToRemoveIdxItr == mEntityIndexMap.end())
+			const size_t entityToRemoveIdx = static_cast<size_t>(entityToRemove.getRawId());
+			if (entityToRemoveIdx >= mEntityExistanceFlags.size() || !mEntityExistanceFlags[entityToRemoveIdx])
 			{
-				RACCOON_ECS_ERROR(std::string("Trying to remove an entity that doesn't exist: ") + std::to_string(entityToRemove.getId()));
+				RACCOON_ECS_ERROR(std::string("Trying to remove non-existent entity: ") + std::to_string(entityToRemoveIdx));
 				return;
 			}
 
-			const EntityIndex oldEntityIdx = entityToRemoveIdxItr->second;
-
-			// we need to swap the removed entity with the latest
-			const EntityIndex lastEntityIndex = mEntities.size() - 1;
-
-			mEntityIndexMap.erase(entityToRemove.getId());
-
-			if (oldEntityIdx != lastEntityIndex)
+			if (mEntityVersions[entityToRemoveIdx] != entityToRemove.getVersion())
 			{
-				// relink maps
-				const Entity swappedEntity = mEntities[lastEntityIndex];
-				std::swap(mEntities[oldEntityIdx], mEntities[lastEntityIndex]);
-				mEntityIndexMap[swappedEntity.getId()] = oldEntityIdx;
+				RACCOON_ECS_ERROR(std::string("Trying to remove entity that was already removed. id:") + std::to_string(entityToRemoveIdx)
+					+ " recorded version:" + std::to_string(mEntityVersions[entityToRemoveIdx])
+					+ " removed version " + std::to_string(entityToRemove.getVersion()));
+				return;
 			}
-			mEntities.pop_back();
 
 			for (auto& componentVector : mComponents)
 			{
 				// if the vector contains deleted entity
-				if (oldEntityIdx < componentVector.second.size())
+				if (entityToRemoveIdx < componentVector.second.size())
 				{
 					// if the entity contains the component
-					if (void*& componentPtrRef = componentVector.second[oldEntityIdx])
+					if (void*& componentPtrRef = componentVector.second[entityToRemoveIdx])
 					{
-						// remove the element
+						// remove the component
 						auto deleterFn = mComponentFactory.get().getDeletionFn(componentVector.first);
 						deleterFn(componentPtrRef);
 						componentPtrRef = nullptr;
 					}
-
-					// if the vector contains the last entity
-					if (lastEntityIndex < componentVector.second.size() && oldEntityIdx != lastEntityIndex)
-					{
-						// move it to the freed space
-						std::swap(componentVector.second[oldEntityIdx], componentVector.second[lastEntityIndex]);
-					}
 				}
 			}
 
-			mIndexes.onEntityRemoved(oldEntityIdx, lastEntityIndex);
+			// ToDo: simplify the logic of indexes since we don't move components anymore
+			mIndexes.onEntityRemoved(entityToRemoveIdx, entityToRemoveIdx);
 
 			onEntityRemoved.broadcast();
+
+			mEntityExistanceFlags[entityToRemoveIdx] = false;
+			const Entity::Version newVersion = ++mEntityVersions[entityToRemoveIdx];
+			// if we hit zero, we used up all the versions for this entity id, skip it
+			if (newVersion != 0)
+			{
+				mFreeEntityIds.push_back(entityToRemoveIdx);
+			}
 		}
 
 		/**
@@ -134,7 +135,10 @@ namespace RaccoonEcs
 		 */
 		bool hasEntity(Entity entity)
 		{
-			return mEntityIndexMap.find(entity.getId()) != mEntityIndexMap.end();
+			const size_t rawEntityId = static_cast<size_t>(entity.getRawId());
+			return rawEntityId < mEntityVersions.size()
+				&& mEntityVersions[rawEntityId] == entity.getVersion()
+				&& mEntityExistanceFlags[rawEntityId];
 		}
 
 		/**
@@ -144,13 +148,13 @@ namespace RaccoonEcs
 		 */
 		[[nodiscard]] bool hasAnyEntities() const
 		{
-			return !mEntities.empty();
+			return mEntityVersions.size() != mFreeEntityIds.size();
 		}
 
 		/**
 		 * @brief Returns list of entities that are stored in this manager
 		 */
-		[[nodiscard]] const std::vector<Entity>& getEntities() const { return mEntities; }
+//		[[nodiscard]] const std::vector<Entity>& getEntities() const { return mEntities; }
 
 		/**
 		 * @brief Collects components that belongs to the given entity and returns them together with their types
@@ -159,16 +163,13 @@ namespace RaccoonEcs
 		 */
 		void getAllEntityComponents(Entity entity, std::vector<TypedComponent>& outComponents)
 		{
-			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
-			if (entityIdxItr != mEntityIndexMap.end())
+			const Entity::RawId entityIdx = entity.getRawId();
+			RACCOON_ECS_ASSERT(entityIdx < mEntityExistanceFlags.size() && mEntityExistanceFlags[entityIdx], "Trying to get components from an non-existing entity");
+			for (auto& componentVector : mComponents)
 			{
-				const EntityIndex index = entityIdxItr->second;
-				for (auto& componentVector : mComponents)
+				if (componentVector.second.size() > entityIdx && componentVector.second[entityIdx] != nullptr)
 				{
-					if (componentVector.second.size() > index && componentVector.second[index] != nullptr)
-					{
-						outComponents.emplace_back(componentVector.first, componentVector.second[index]);
-					}
+					outComponents.emplace_back(componentVector.first, componentVector.second[entityIdx]);
 				}
 			}
 		}
@@ -180,16 +181,13 @@ namespace RaccoonEcs
 		 */
 		void getAllEntityComponents(Entity entity, std::vector<ConstTypedComponent>& outComponents) const
 		{
-			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
-			if (entityIdxItr != mEntityIndexMap.end())
+			const Entity::RawId entityIdx = entity.getRawId();
+			RACCOON_ECS_ASSERT(entityIdx < mEntityExistanceFlags.size() && mEntityExistanceFlags[entityIdx], "Trying to get components from an non-existing entity");
+			for (auto& componentVector : mComponents)
 			{
-				const EntityIndex index = entityIdxItr->second;
-				for (auto& componentVector : mComponents)
+				if (componentVector.second.size() > entityIdx && componentVector.second[entityIdx] != nullptr)
 				{
-					if (componentVector.second.size() > index && componentVector.second[index] != nullptr)
-					{
-						outComponents.emplace_back(componentVector.first, componentVector.second[index]);
-					}
+					outComponents.emplace_back(componentVector.first, componentVector.second[entityIdx]);
 				}
 			}
 		}
@@ -199,17 +197,10 @@ namespace RaccoonEcs
 		 */
 		[[nodiscard]] bool doesEntityHaveComponent(Entity entity, ComponentTypeId typeId) const
 		{
-			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
-			if (entityIdxItr != mEntityIndexMap.end())
-			{
-				const std::vector<void*>& componentVector = mComponents.getComponentVectorById(typeId);
-				const EntityIndex index = entityIdxItr->second;
-				return (componentVector.size() > index && componentVector[index] != nullptr);
-			}
-
-			RACCOON_ECS_ERROR(std::string("Trying to check component ") + toString(typeId)
-				+ " of non-existing entity: " + std::to_string(entity.getId()));
-			return false;
+			const Entity::RawId entityIdx = entity.getRawId();
+			RACCOON_ECS_ASSERT(entityIdx < mEntityExistanceFlags.size() && mEntityExistanceFlags[entityIdx], "Trying to get components from an non-existing entity");
+			const std::vector<void*>& componentVector = mComponents.getComponentVectorById(typeId);
+			return (componentVector.size() > entityIdx && componentVector[entityIdx] != nullptr);
 		}
 
 		/**
@@ -263,16 +254,16 @@ namespace RaccoonEcs
 		 */
 		void addComponent(Entity entity, void* component, ComponentTypeId typeId)
 		{
-			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
-			if (entityIdxItr == mEntityIndexMap.end())
+			const Entity::RawId entityIdx = entity.getRawId();
+			if (entityIdx >= mEntityExistanceFlags.size() || !mEntityExistanceFlags[entityIdx])
 			{
 				RACCOON_ECS_ERROR(std::string("Trying to add component ") + toString(typeId)
-					+ " to a non-existent entity " + std::to_string(entity.getId()));
+					+ " to a non-existent entity " + std::to_string(entityIdx));
 				// memory leak here
 				return;
 			}
 
-			addComponentToEntity(entityIdxItr->second, component, typeId);
+			addComponentToEntity(entityIdx, component, typeId);
 		}
 
 		/**
@@ -287,17 +278,15 @@ namespace RaccoonEcs
 
 		void removeComponent(Entity entity, ComponentTypeId typeId)
 		{
-			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
-			if (entityIdxItr == mEntityIndexMap.end())
+			const Entity::RawId entityIdx = entity.getRawId();
+			if (entityIdx >= mEntityExistanceFlags.size() || !mEntityExistanceFlags[entityIdx])
 			{
 				RACCOON_ECS_ERROR(std::string("Trying to remove component ") + toString(typeId)
-						+ " from a non-existent entity " + std::to_string(entity.getId()));
+						+ " from a non-existent entity " + std::to_string(entityIdx));
 				return;
 			}
 
 			auto& componentsVector = mComponents.getComponentVectorById(typeId);
-
-			EntityIndex entityIdx = entityIdxItr->second;
 
 			if (entityIdx < componentsVector.size())
 			{
@@ -387,12 +376,11 @@ namespace RaccoonEcs
 		template<typename... Components>
 		std::tuple<Components*...> getEntityComponents(Entity entity)
 		{
-			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
-			if (entityIdxItr == mEntityIndexMap.end())
+			const Entity::RawId entityIdx = entity.getRawId();
+			if (entityIdx >= mEntityExistanceFlags.size() || !mEntityExistanceFlags[entityIdx])
 			{
 				return getEmptyComponents<Components...>();
 			}
-			EntityIndex entityIdx = entityIdxItr->second;
 
 			auto componentVectors = mComponents.template getComponentVectors<Components...>();
 			return getEntityComponentSet<Components...>(entityIdx, componentVectors);
@@ -447,9 +435,10 @@ namespace RaccoonEcs
 
 				for (size_t i = 0; i < componentIndexes.size(); ++i)
 				{
+					const size_t entityIdx = componentIndexes[i];
 					inOutComponents.push_back(std::tuple_cat(
 						std::make_tuple(data...),
-						std::make_tuple(mEntities[componentIndexes[i]]),
+						std::make_tuple(Entity{static_cast<Entity::RawId>(entityIdx), mEntityVersions[entityIdx]}),
 						components[i]
 					));
 				}
@@ -497,9 +486,10 @@ namespace RaccoonEcs
 
 				for (size_t i = 0; i < componentIndexes.size(); ++i)
 				{
+					const size_t entityIdx = componentIndexes[i];
 					std::apply(processor, std::tuple_cat(
 						std::make_tuple(data...),
-						std::make_tuple(mEntities[componentIndexes[i]]),
+						std::make_tuple(Entity{static_cast<Entity::RawId>(entityIdx), mEntityVersions[entityIdx]}),
 						components[i]
 					));
 				}
@@ -518,7 +508,7 @@ namespace RaccoonEcs
 				return;
 			}
 
-			EntityIndex endIdx = std::numeric_limits<EntityIndex>::max();
+			size_t endIdx = std::numeric_limits<Entity::RawId>::max();
 			std::vector<const std::vector<void*>*> componentVectors;
 			componentVectors.reserve(componentIndexes.size());
 			for (ComponentTypeId typeId : componentIndexes)
@@ -530,7 +520,7 @@ namespace RaccoonEcs
 				componentVectors.push_back(&componentVector);
 			}
 
-			for (EntityIndex idx = 0; idx < endIdx; ++idx)
+			for (size_t idx = 0; idx < endIdx; ++idx)
 			{
 				const bool hasAllComponents = std::all_of(
 					componentVectors.cbegin(),
@@ -540,7 +530,7 @@ namespace RaccoonEcs
 
 				if (hasAllComponents)
 				{
-					inOutEntities.emplace_back(mEntities[idx]);
+					inOutEntities.push_back(Entity{static_cast<Entity::RawId>(idx), mEntityVersions[idx]});
 				}
 			}
 		}
@@ -561,36 +551,29 @@ namespace RaccoonEcs
 		 * @brief Transfers the given entity together with its components to another manager
 		 * @param newManager  The manager to which the entity will be transfer to
 		 * @param entity  The entity that will be transferred
+		 * @return The entity in the new manager
 		 *
 		 * The components are guaranteed not to be moved in the memory.
 		 */
-		void transferEntityTo(EntityManager& newManager, Entity entity)
+		Entity transferEntityTo(EntityManager& newManager, Entity entity)
 		{
 			if (this == &newManager)
 			{
 				RACCOON_ECS_ERROR("Transferring entity to the same manager. This should never happen");
-				return;
+				return entity;
 			}
 
 			RACCOON_ECS_ASSERT(&mComponentFactory.get() == &newManager.mComponentFactory.get(),
 				"Trying to transfer entity between managers with different component factories, this is not supported yet");
 
-			RACCOON_ECS_ASSERT(&mEntityGenerator.get() == &newManager.mEntityGenerator.get(),
-				"Trying to transfer entity between managers with different entity generators, this may create collisions");
-
-			const auto entityIdxItr = mEntityIndexMap.find(entity.getId());
-			if (entityIdxItr == mEntityIndexMap.end())
+			const size_t oldEntityIdx = static_cast<size_t>(entity.getRawId());
+			if (oldEntityIdx >= mEntityExistanceFlags.size() || !mEntityExistanceFlags[oldEntityIdx])
 			{
-				RACCOON_ECS_ERROR(std::string("Trying transfer non-existent entity: ") + std::to_string(entity.getId()));
-				return;
+				RACCOON_ECS_ERROR(std::string("Trying transfer non-existent entity: ") + std::to_string(entity.getRawId()));
+				return entity;
 			}
 
-			[[maybe_unused]] const auto insertionResult = newManager.mEntityIndexMap.try_emplace(entity.getId(), newManager.mEntities.size());
-			RACCOON_ECS_ASSERT(insertionResult.second, "EntityId is not unique, two entities collided during transfer. Make sure all entity managers use one shared EntityGenerator");
-			newManager.mEntities.push_back(entity);
-
-			const EntityIndex oldEntityIdx = entityIdxItr->second;
-			const EntityIndex lastEntityIdx = mEntities.size() - 1;
+			const Entity newEntity = newManager.addEntity();
 
 			for (auto& componentVector : mComponents)
 			{
@@ -600,7 +583,7 @@ namespace RaccoonEcs
 					if (componentVector.second[oldEntityIdx] != nullptr)
 					{
 						newManager.addComponent(
-							entity,
+							newEntity,
 							componentVector.second[oldEntityIdx],
 							componentVector.first
 						);
@@ -608,26 +591,21 @@ namespace RaccoonEcs
 						// remove the component from the old manager
 						componentVector.second[oldEntityIdx] = nullptr;
 					}
-
-					// move components of the last entity to the freed space
-					if (lastEntityIdx < componentVector.second.size() && oldEntityIdx != lastEntityIdx)
-					{
-						std::swap(componentVector.second[oldEntityIdx], componentVector.second[lastEntityIdx]);
-					}
 				}
 			}
 
-			mEntityIndexMap.erase(entity.getId());
+			// ToDo: simplify since we don't move components anymore
+			mIndexes.onEntityRemoved(oldEntityIdx, oldEntityIdx);
 
-			// swap with the last entity
-			if (oldEntityIdx != lastEntityIdx)
+			mEntityExistanceFlags[oldEntityIdx] = false;
+			const Entity::Version newVersion = ++mEntityVersions[oldEntityIdx];
+			// if we hit zero, we used up all the versions for this entity id, skip it
+			if (newVersion != 0)
 			{
-				const Entity entityToSwap = mEntities[lastEntityIdx];
-				mEntityIndexMap[entityToSwap.getId()] = oldEntityIdx;
-				std::swap(mEntities[lastEntityIdx], mEntities[oldEntityIdx]);
+				mFreeEntityIds.push_back(oldEntityIdx);
 			}
-			mEntities.pop_back();
-			mIndexes.onEntityRemoved(oldEntityIdx, lastEntityIdx);
+
+			return newEntity;
 		}
 
 		/**
@@ -641,35 +619,6 @@ namespace RaccoonEcs
 		void initIndex()
 		{
 			mIndexes.template initializeIndex<Components...>(mComponents);
-		}
-
-		/**
-		 * @brief Generates yet unused Entity. Should be used together with addExistingEntityUnsafe
-		 * @return Not yet used Entity
-		 *
-		 * Can produce collisions if between call to this function and call to tryInsertEntity
-		 * any work with entity happened that could produce new Entity registration
-		 */
-		[[nodiscard]] Entity generateNewEntityUnsafe()
-		{
-			return Entity(mEntityGenerator.get().generateNewEntityId());
-		}
-
-		/**
-		 * @brief Inserts an entity that was removed from an entity manager or created with generateNewEntityUnsafe
-		 * @param entity  The entity that need to be inserted
-		 *
-		 * Use cases: re-adding deleted entity by "undo" editor command, loading the game from save.
-		 */
-		void addExistingEntityUnsafe(Entity entity)
-		{
-			mEntityGenerator.get().registerEntityId(entity.getId());
-
-			const EntityIndex newEntityId = mEntities.size();
-			mEntities.push_back(entity);
-			mEntityIndexMap.emplace(entity.getId(), newEntityId);
-
-			onEntityAdded.broadcast();
 		}
 
 #ifdef RACCOON_ECS_COPYABLE_COMPONENTS
@@ -727,8 +676,9 @@ namespace RaccoonEcs
 			}
 			mComponents.cleanEmptyVectors();
 
-			mEntities.clear();
-			mEntityIndexMap.clear();
+			mEntityExistanceFlags.clear();
+			mEntityVersions.clear();
+			mFreeEntityIds.clear();
 
 			mScheduledComponentAdditions.clear();
 			mScheduledComponentRemovements.clear();
@@ -744,13 +694,22 @@ namespace RaccoonEcs
 		const ComponentMap& getComponentsData() const { return mComponents; }
 
 		/**
-		 * @brief Applies a function that suppose to sort the data before serializing
-		 * @param func  A callable that will accept references to inner data (can change in future)
+		 * @brief Collect the list of all entities
+		 *
+		 * Can be useful for serialization
 		 */
-		template<typename Func>
-		void applySortingFunction(Func&& func) {
-			func(mComponents, mEntities, mEntityIndexMap);
-			mIndexes.rebuild(mComponents);
+		std::vector<Entity> collectAllEntities() const
+		{
+			std::vector<Entity> entities;
+			entities.reserve(mEntityExistanceFlags.size());
+			for (size_t i = 0; i < mEntityExistanceFlags.size(); ++i)
+			{
+				if (mEntityExistanceFlags[i])
+				{
+					entities.emplace_back(i, mEntityVersions[i]);
+				}
+			}
+			return entities;
 		}
 
 	public:
@@ -796,13 +755,13 @@ namespace RaccoonEcs
 		}
 
 		template<unsigned Index, typename Datas>
-		std::tuple<> getEntityComponentSetInner(EntityIndex /*entityIdx*/, Datas& /*componentVectors*/)
+		std::tuple<> getEntityComponentSetInner(size_t /*entityIdx*/, Datas& /*componentVectors*/)
 		{
 			return {};
 		}
 
 		template<unsigned Index, typename Datas, typename FirstComponent, typename... Components>
-		std::tuple<FirstComponent*, Components*...> getEntityComponentSetInner(EntityIndex entityIdx, Datas& componentVectors)
+		std::tuple<FirstComponent*, Components*...> getEntityComponentSetInner(size_t entityIdx, Datas& componentVectors)
 		{
 			if (std::get<Index>(componentVectors).size() <= entityIdx)
 			{
@@ -819,7 +778,7 @@ namespace RaccoonEcs
 		}
 
 		template<typename FirstComponent, typename... Components, typename... Data>
-		std::tuple<FirstComponent*, Components*...> getEntityComponentSet(EntityIndex entityIdx, std::tuple<std::vector<Data*>&...>& componentVectors)
+		std::tuple<FirstComponent*, Components*...> getEntityComponentSet(size_t entityIdx, std::tuple<std::vector<Data*>&...>& componentVectors)
 		{
 			using Datas = std::tuple<std::vector<Data*>&...>;
 			return getEntityComponentSetInner<0, Datas, FirstComponent, Components...>(entityIdx, componentVectors);
@@ -839,7 +798,7 @@ namespace RaccoonEcs
 			return minimalSize;
 		}
 
-		void addComponentToEntity(EntityIndex entityIdx, void* component, ComponentTypeId typeId)
+		void addComponentToEntity(size_t entityIdx, void* component, ComponentTypeId typeId)
 		{
 			auto& componentsVector = mComponents.getOrCreateComponentVectorById(typeId);
 			if (componentsVector.size() <= entityIdx)
@@ -857,69 +816,17 @@ namespace RaccoonEcs
 			}
 			else
 			{
-				RACCOON_ECS_ERROR(std::string("Trying to add a component when the entity already has one of the same type. This will result in UB, entity: ") + std::to_string(mEntities[entityIdx].getId()) + ", component: " + toString(typeId));
+				RACCOON_ECS_ERROR(std::string("Trying to add a component when the entity already has one of the same type. This will result in UB, entity: ") + std::to_string(entityIdx) + ", component: " + toString(typeId));
 			}
 			mIndexes.onComponentAdded(typeId, entityIdx, mComponents);
-		}
-
-		template<typename FirstComponent, typename... Components>
-		void gatherNonIndexedComponents(std::vector<std::tuple<FirstComponent*, Components*...>>& outComponents)
-		{
-			auto componentVectors = mComponents.template getComponentVectors<FirstComponent, Components...>();
-			auto& firstComponentVector = std::get<0>(componentVectors);
-			size_t shortestVectorSize = GetShortestVector(componentVectors);
-
-			constexpr unsigned componentsSize = sizeof...(Components);
-
-			for (EntityIndex entityIndex = 0, iSize = shortestVectorSize; entityIndex < iSize; ++entityIndex)
-			{
-				auto& firstComponent = firstComponentVector[entityIndex];
-				if (firstComponent == nullptr)
-				{
-					continue;
-				}
-
-				auto components = getEntityComponentSet<FirstComponent, Components...>(entityIndex, componentVectors);
-
-				if (std::get<componentsSize>(components) != nullptr)
-				{
-					outComponents.push_back(std::move(components));
-				}
-			}
-		}
-
-		template<typename FirstComponent, typename... Components>
-		void gatherNonIndexedComponentsWithEntities(std::vector<std::tuple<Entity, FirstComponent*, Components*...>>& outComponents)
-		{
-			auto componentVectors = mComponents.template getComponentVectors<FirstComponent, Components...>();
-			auto& firstComponentVector = std::get<0>(componentVectors);
-			size_t shortestVectorSize = GetShortestVector(componentVectors);
-
-			constexpr unsigned componentsSize = sizeof...(Components);
-
-			for (EntityIndex entityIndex = 0, iSize = shortestVectorSize; entityIndex < iSize; ++entityIndex)
-			{
-				auto& firstComponent = firstComponentVector[entityIndex];
-				if (firstComponent == nullptr)
-				{
-					continue;
-				}
-
-				auto components = getEntityComponentSet<FirstComponent, Components...>(entityIndex, componentVectors);
-
-				if (std::get<componentsSize>(components) != nullptr)
-				{
-					outComponents.push_back(
-							std::tuple_cat(std::make_tuple(mEntities[entityIndex]), std::move(components)));
-				}
-			}
 		}
 
 #ifdef RACCOON_ECS_COPYABLE_COMPONENTS
 		void copyEntitiesFrom(const EntityManager& originalInstance)
 		{
-			mEntities = originalInstance.mEntities;
-			mEntityIndexMap = originalInstance.mEntityIndexMap;
+			mEntityExistanceFlags = originalInstance.mEntityExistanceFlags;
+			mEntityVersions = originalInstance.mEntityVersions;
+			mFreeEntityIds = originalInstance.mFreeEntityIds;
 
 			for (auto& componentVectorPair : originalInstance.mComponents)
 			{
@@ -938,16 +845,17 @@ namespace RaccoonEcs
 
 	private:
 		ComponentMap mComponents;
-		std::vector<Entity> mEntities;
-		std::unordered_map<Entity::EntityId, EntityIndex> mEntityIndexMap;
 
 		ComponentIndexes<ComponentTypeId> mIndexes;
+
+		std::vector<bool> mEntityExistanceFlags;
+		std::vector<Entity::Version> mEntityVersions;
+		std::vector<size_t> mFreeEntityIds;
 
 		std::vector<ComponentToAdd> mScheduledComponentAdditions;
 		std::vector<ComponentToRemove> mScheduledComponentRemovements;
 
 		std::reference_wrapper<const ComponentFactory> mComponentFactory;
-		std::reference_wrapper<EntityGenerator> mEntityGenerator;
 	};
 
 } // namespace RaccoonEcs
