@@ -11,13 +11,12 @@ Tests: https://github.com/gameraccoon/raccoon-ecs-tests/
 
 ## Features
 
-- **Header-only**: add to your project, include and start using it, no additional set-up steps required
-- **Minimal requirements to components**: in the base implementation they need to be default-constructible and have a static `GetTypeId` method
-- **Support for separation of storages for entities**: useful for world partition, time rewinding, level streaming, 'singleton' components, etc.
-- **Opt-in copyable storages for entities**: in case you want to dynamically copy your worlds, e.g. for time rewinding
-- **No requirements for systems**: you can use `SystemsManager` or can run systems from your code directly, useful if you want to run your systems in parallel
-- **Custom types for IDs**: want to store component IDs as enum values? int? string? no problem!
-- **More options for configuration**: you can change the way how IDs are generated, how components are constructed, and tweak some other things
+- **Header-only**: Add to your project, include, and start using it. No additional set-up steps are required.
+- **Minimal requirements to components**: In the base implementation they need to be default-constructible and have a static `GetTypeId` method.
+- **Support for separation of storages for entities**: Useful for world partition, time rewinding, level streaming, 'singleton' components, etc.
+- **Opt-in copyable storages for entities**: In case you want to dynamically copy your worlds, e.g. for time rewinding.
+- **No requirements for systems**: You can use `SystemsManager` or can run systems from your code directly, useful if you want to run your systems in parallel.
+- **Custom types for IDs**: Want to store component IDs as enum values? int? string? You are covered!
 
 ## Example usage
 
@@ -36,7 +35,6 @@ enum ComponentType {
 
 // some useful type aliases
 using ComponentFactory = RaccoonEcs::ComponentFactoryImpl<ComponentType>;
-using EntityGenerator = RaccoonEcs::IncrementalEntityGenerator;
 using EntityManager = RaccoonEcs::EntityManagerImpl<ComponentType>;
 using Entity = RaccoonEcs::Entity;
 
@@ -74,17 +72,15 @@ private:
 int main() {
 	// component factory allocate space for components and creates them
 	ComponentFactory componentFactory;
-	// entity generator generates unique ids for entities
-	EntityGenerator entityGenerator;
 	// entity manager manages entities and components, there can be multiple entity managers
-	EntityManager entityManager{componentFactory, entityGenerator};
+	EntityManager entityManager{componentFactory};
 
 	// register components
 	componentFactory.registerComponent<Position>();
 
 	// create an entity and add the Position component
 	const Entity newEntity = entityManager.addEntity();
-	auto* position = entityManager.addComponent<Position>(newEntity);
+	Position* position = entityManager.addComponent<Position>(newEntity);
 	position->x = 100.0f;
 	position->y = 200.0f;
 
