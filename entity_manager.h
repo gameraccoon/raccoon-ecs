@@ -141,11 +141,11 @@ namespace RaccoonEcs
 		}
 
 		/**
-		 * @brief Returns true if this manager has any entities
+		 * @brief Returns true if this manager has at least one entity
 		 * If it doesn't have any entities it's pretty much doesn't have any valuable data
 		 * since EntityManager can't contain components not bound to entities
 		 */
-		[[nodiscard]] bool hasAnyEntities() const
+		[[nodiscard]] bool hasAnyEntity() const
 		{
 			return mEntityVersions.size() != mFreeEntityIds.size();
 		}
