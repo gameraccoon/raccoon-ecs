@@ -308,9 +308,9 @@ namespace RaccoonEcs
 		static const std::vector<ComponentTypeId>& getComponentTypes()
 		{
 			static const std::vector<ComponentTypeId> componentTypes = []{
-				std::vector<ComponentTypeId> componentTypes{Components::GetTypeId()...};
-				std::sort(componentTypes.begin(), componentTypes.end());
-				return componentTypes;
+				std::vector<ComponentTypeId> types{Components::GetTypeId()...};
+				std::sort(types.begin(), types.end());
+				return types;
 			}();
 			return componentTypes;
 		}

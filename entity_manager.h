@@ -71,7 +71,7 @@ namespace RaccoonEcs
 				size_t freeEntityId = mFreeEntityIds.back();
 				mFreeEntityIds.pop_back();
 				mEntityExistanceFlags[freeEntityId] = true;
-				rawEntityId = freeEntityId;
+				rawEntityId = static_cast<Entity::RawId>(freeEntityId);
 			}
 
 			onEntityAdded.broadcast();
@@ -163,12 +163,11 @@ namespace RaccoonEcs
 			{
 				if (mEntityExistanceFlags[i])
 				{
-					entities.emplace_back(i, mEntityVersions[i]);
+					entities.emplace_back(static_cast<Entity::RawId>(i), mEntityVersions[i]);
 				}
 			}
 			return entities;
 		}
-
 
 		/**
 		 * @brief Collects components that belongs to the given entity and returns them together with their types
