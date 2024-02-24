@@ -10,7 +10,7 @@
 namespace RaccoonEcs
 {
 	// A container that allows to perform operations over entities from multiple entity managers in a single call
-	template<typename EntityManager, typename ExtraData = nullptr_t>
+	template<typename EntityManager, typename ExtraData = std::nullptr_t>
 	class CombinedEntityManagerView
 	{
 	public:
@@ -141,7 +141,7 @@ namespace RaccoonEcs
 		{
 			for (Record& record : mRecords)
 			{
-				record.entityManager.get().TEMPLATE_MSVC_FIX executeScheduledActions();
+				record.entityManager.get().TEMPLATE_MSVC_CLANG_FIX executeScheduledActions();
 			}
 		}
 
