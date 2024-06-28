@@ -452,7 +452,10 @@ namespace RaccoonEcs
 			{
 				if (inOutComponents.size() + componentIndexes.size() > inOutComponents.capacity())
 				{
-					inOutComponents.reserve(std::max(inOutComponents.size() + componentIndexes.size(), inOutComponents.size() * 2));
+					// have to use this weird syntax because it otherwise can break on MSVC is someone
+					// inludes <windows.h> before this file without NOMINMAX defined
+					const size_t newCapacity = (std::max)(inOutComponents.size() + componentIndexes.size(), inOutComponents.size() * 2);
+					inOutComponents.reserve(newCapacity);
 				}
 
 				auto components = mIndexes.template getComponents<Components...>(mComponents);
@@ -532,14 +535,18 @@ namespace RaccoonEcs
 				return;
 			}
 
-			size_t endIdx = std::numeric_limits<Entity::RawId>::max();
+			// have to use this weird syntax because it otherwise can break on MSVC is someone
+			// inludes <windows.h> before this file without NOMINMAX defined
+			size_t endIdx = (std::numeric_limits<Entity::RawId>::max)();
 			std::vector<const std::vector<void*>*> componentVectors;
 			componentVectors.reserve(componentIndexes.size());
 			for (ComponentTypeId typeId : componentIndexes)
 			{
 				auto& componentVector = mComponents.getComponentVectorById(typeId);
 
-				endIdx = std::min(endIdx, componentVector.size());
+				// have to use this weird syntax because it otherwise can break on MSVC is someone
+				// inludes <windows.h> before this file without NOMINMAX defined
+				endIdx = (std::min)(endIdx, componentVector.size());
 
 				componentVectors.push_back(&componentVector);
 			}
@@ -791,11 +798,15 @@ namespace RaccoonEcs
 		template<typename... ComponentVector>
 		static size_t GetShortestVector(const std::tuple<ComponentVector&...>& vectorTuple)
 		{
-			size_t minimalSize = std::numeric_limits<size_t>::max();
+			// have to use this weird syntax because it otherwise can break on MSVC is someone
+			// inludes <windows.h> before this file without NOMINMAX defined
+			size_t minimalSize = (std::numeric_limits<size_t>::max)();
 			std::apply(
 				[&minimalSize](const ComponentVector&... componentVector)
 				{
-					((minimalSize = std::min(minimalSize, componentVector.size())), ...);
+					// have to use this weird syntax because it otherwise can break on MSVC is someone
+					// inludes <windows.h> before this file without NOMINMAX defined
+					((minimalSize = (std::min)(minimalSize, componentVector.size())), ...);
 				},
 				vectorTuple
 			);

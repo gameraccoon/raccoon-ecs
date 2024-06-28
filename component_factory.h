@@ -1,8 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <unordered_map>
 #include <string>
 
@@ -11,6 +11,14 @@
 
 namespace RaccoonEcs
 {
+	template<typename ComponentType>
+	struct DefaultComponentChunkSize
+	{
+		// have to use this weird syntax because it otherwise can break on MSVC is someone
+		// inludes <windows.h> before this file without NOMINMAX defined
+		constexpr static size_t value = (std::max)(static_cast<size_t>(1u), static_cast<size_t>(4096u / sizeof(ComponentType)));
+	};
+
 	template <typename ComponentTypeId>
 	class ComponentFactoryImpl
 	{
@@ -51,7 +59,7 @@ namespace RaccoonEcs
 		// normal component
 		template<typename ComponentType, std::enable_if_t<!std::is_empty_v<ComponentType>, int> = 0>
 		void registerComponent(
-			const size_t defaultChunkSize = std::max(static_cast<size_t>(1), static_cast<size_t>(4096u / sizeof(ComponentType))),
+			const size_t defaultChunkSize = DefaultComponentChunkSize<ComponentType>::value,
 			const bool needPreallocate = false,
 			std::function<size_t(size_t)>&& poolGrowStrategyFn = nullptr)
 		{

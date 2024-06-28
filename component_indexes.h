@@ -32,6 +32,10 @@ namespace RaccoonEcs
 		static constexpr std::size_t PackIdx = Idx<Type, Types...>::value;
 	} // namespace TemplateTrick
 
+	// have to use this weird syntax because it otherwise can break on MSVC is someone
+	// inludes <windows.h> before this file without NOMINMAX defined
+	constexpr size_t MaxOfSizeType = (std::numeric_limits<size_t>::max)();
+
 	template<typename ComponentTypeId>
 	class ComponentIndexes
 	{
@@ -163,7 +167,7 @@ namespace RaccoonEcs
 			void setPopulated(const bool isPopulated) { mIsPopulated = isPopulated; }
 
 		protected:
-			constexpr static size_t InvalidIndex = std::numeric_limits<size_t>::max();
+			constexpr static size_t InvalidIndex = MaxOfSizeType;
 
 		private:
 			bool mIsPopulated = false;
@@ -195,7 +199,10 @@ namespace RaccoonEcs
 				{
 					if (mSparseArray.capacity() < entityIndex + 1)
 					{
-						mSparseArray.reserve(std::max(static_cast<size_t>(16), (entityIndex + 1) * 2));
+						// have to use this weird syntax because it otherwise can break on MSVC is someone
+						// inludes <windows.h> before this file without NOMINMAX defined
+						const size_t newSize = (std::max)(static_cast<size_t>(16), (entityIndex + 1) * 2);
+						mSparseArray.reserve(newSize);
 					}
 					mSparseArray.resize(entityIndex + 1, BaseIndex::InvalidIndex);
 				}
@@ -248,16 +255,18 @@ namespace RaccoonEcs
 			void populate(const ComponentMap& componentMap) override
 			{
 				BaseIndex::setPopulated(true);
-				size_t shortestVectorSize = std::numeric_limits<size_t>::max();
+				size_t shortestVectorSize = MaxOfSizeType;
 				std::vector<const std::vector<void*>*> componentVectors;
 				componentVectors.reserve(mComponentTypes.size());
 				for (ComponentTypeId typeId : mComponentTypes)
 				{
 					componentVectors.push_back(&componentMap.getComponentVectorById(typeId));
-					shortestVectorSize = std::min(shortestVectorSize, componentVectors.back()->size());
+					// have to use this weird syntax because it otherwise can break on MSVC is someone
+					// inludes <windows.h> before this file without NOMINMAX defined
+					shortestVectorSize = (std::min)(shortestVectorSize, componentVectors.back()->size());
 				}
 
-				if (shortestVectorSize == std::numeric_limits<size_t>::max() || shortestVectorSize == 0)
+				if (shortestVectorSize == MaxOfSizeType || shortestVectorSize == 0)
 				{
 					return;
 				}
