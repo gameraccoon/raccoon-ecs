@@ -19,7 +19,7 @@ namespace RaccoonEcs
 		using Version = std::uint32_t;
 
 	public:
-		explicit Entity(RawId id, Version version) noexcept
+		explicit Entity(const RawId id, const Version version) noexcept
 			: mId(id)
 			, mVersion(version)
 		{}
@@ -29,7 +29,7 @@ namespace RaccoonEcs
 			return mId == other.mId && mVersion == other.mVersion;
 		}
 		bool operator!=(const Entity& other) const noexcept { return !(*this == other); }
-		bool operator<(Entity other) const noexcept {
+		bool operator<(const Entity other) const noexcept {
 			return mId < other.mId || (mId == other.mId && mVersion < other.mVersion);
 		}
 
@@ -54,9 +54,10 @@ namespace RaccoonEcs
 	{
 	public:
 		OptionalEntity() = default;
-		// implicit conversion
-		OptionalEntity(Entity entity) : mEntity(entity), mIsValid(true) {} // NOLINT(*-explicit-constructor)
-		explicit OptionalEntity(Entity::RawId id, Entity::Version version)
+		// implicit conversion from Entity
+		// ReSharper disable once CppNonExplicitConvertingConstructor
+		OptionalEntity(const Entity entity) : mEntity(entity), mIsValid(true) {} // NOLINT(*-explicit-constructor)
+		explicit OptionalEntity(const Entity::RawId id, const Entity::Version version)
 			: mEntity(id, version)
 			, mIsValid(true)
 		{}
@@ -99,11 +100,8 @@ namespace RaccoonEcs
 	static_assert(std::is_trivially_destructible<OptionalEntity>(), "OptionalEntity should be trivially destructible");
 } // namespace RaccoonEcs
 
-namespace std
+template <>
+struct std::hash<RaccoonEcs::Entity>
 {
-	template <>
-	struct hash<RaccoonEcs::Entity>
-	{
-		std::size_t operator()(RaccoonEcs::Entity entity) const { return std::hash<RaccoonEcs::Entity::RawId>()(entity.getRawId()) ^ std::hash<RaccoonEcs::Entity::Version>()(entity.getVersion()); }
-	};
-}
+	std::size_t operator()(const RaccoonEcs::Entity entity) const noexcept { return std::hash<RaccoonEcs::Entity::RawId>()(entity.getRawId()) ^ std::hash<RaccoonEcs::Entity::Version>()(entity.getVersion()); }
+};

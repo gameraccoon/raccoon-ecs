@@ -22,6 +22,7 @@ namespace RaccoonEcs
 		SinglecastDelegate& operator=(const SinglecastDelegate&)
 		{
 			mFunction.clear();
+			return *this;
 		}
 
 		SinglecastDelegate(SinglecastDelegate&& other) noexcept
@@ -33,6 +34,7 @@ namespace RaccoonEcs
 		{
 			mFunction = std::move(other.mFunction);
 			other.mFunction.clear();
+			return *this;
 		}
 
 		void assign(FunctionType fn)
@@ -70,7 +72,7 @@ namespace RaccoonEcs
 		{
 		public:
 			Handle() = default;
-			explicit Handle(int index)
+			explicit Handle(const int index)
 				: mIndex(index)
 			{
 			}
@@ -103,6 +105,7 @@ namespace RaccoonEcs
 		{
 			mFunctions.clear();
 			mNextFunctionId = 0;
+			return *this;
 		}
 
 		MulticastDelegate(MulticastDelegate&& other) noexcept
@@ -162,7 +165,7 @@ namespace RaccoonEcs
 	private:
 		struct FunctionData
 		{
-			FunctionData(Delegates::Handle handle, FunctionType fn)
+			FunctionData(const Delegates::Handle handle, FunctionType fn)
 				: handle(handle)
 				, fn(fn)
 			{}

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <algorithm>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -80,7 +80,7 @@ namespace RaccoonEcs
 
 	private:
 		template<int I = 0>
-		std::tuple<> getEmptyComponentVectors()
+		static std::tuple<> getEmptyComponentVectors()
 		{
 			return std::tuple<>();
 		}
@@ -92,7 +92,7 @@ namespace RaccoonEcs
 		}
 
 		template<int I = 0>
-		std::tuple<> getComponentVectors()
+		static std::tuple<> getComponentVectors()
 		{
 			return std::tuple<>();
 		}

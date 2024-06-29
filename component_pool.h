@@ -1,11 +1,8 @@
 #pragma once
 
-#include <array>
 #include <numeric>
 #include <vector>
 #include <functional>
-
-#include "error_handling.h"
 
 namespace RaccoonEcs
 {
@@ -21,7 +18,7 @@ namespace RaccoonEcs
 	public:
 		using PoolGrowStrategyFn = std::function<size_t(size_t)>;
 	public:
-		explicit ComponentPool(size_t defaultChunkSize, bool needPreallocate = false, PoolGrowStrategyFn&& growStrategyFn = nullptr) noexcept
+		explicit ComponentPool(const size_t defaultChunkSize, const bool needPreallocate = false, PoolGrowStrategyFn&& growStrategyFn = nullptr) noexcept
 			: mDefaultChunkSize(defaultChunkSize)
 			, mGrowStrategyFn(growStrategyFn)
 		{
@@ -31,10 +28,10 @@ namespace RaccoonEcs
 			}
 		}
 
-		~ComponentPool() final
+		~ComponentPool() override
 		{
 			// we assume that all the components were unregistered before component pool destruction
-			for (ComponentSlot* chunk : mChunks)
+			for (const ComponentSlot* chunk : mChunks)
 			{
 				delete[] chunk;
 			}
@@ -76,6 +73,7 @@ namespace RaccoonEcs
 				ComponentSlot* nextFreeSlot;
 			};
 
+			// ReSharper disable once CppPossiblyUninitializedMember
 			ComponentSlot()
 			{
 			}
@@ -93,17 +91,13 @@ namespace RaccoonEcs
 			{
 				return mDefaultChunkSize;
 			}
-			else
+
+			if (mGrowStrategyFn)
 			{
-				if (mGrowStrategyFn)
-				{
-					return mGrowStrategyFn(mAllocatedComponentsCount);
-				}
-				else
-				{
-					return mAllocatedComponentsCount * 2;
-				}
+				return mGrowStrategyFn(mAllocatedComponentsCount);
 			}
+
+			return mAllocatedComponentsCount * 2;
 		}
 
 		void allocateNewChunk()

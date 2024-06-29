@@ -1,13 +1,10 @@
 #pragma once
 
-#include <map>
 #include <tuple>
 #include <vector>
-#include <memory>
 #include <string>
 
 #include "component_factory.h"
-#include "delegates.h"
 #include "error_handling.h"
 #include "typed_component.h"
 

@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <ranges>
 #include <tuple>
-#include <unordered_map>
-#include <memory>
 #include <string>
 
 #include "component_factory.h"
@@ -30,7 +28,7 @@ namespace RaccoonEcs
 		/**
 		 * @param componentFactory  Should be a reference to a ComponentFactory object that has longer lifetime than this EntityManager
 		 */
-		EntityManagerImpl(const ComponentFactory& componentFactory)
+		explicit EntityManagerImpl(const ComponentFactory& componentFactory)
 			: mComponentFactory(componentFactory)
 		{}
 
@@ -58,7 +56,7 @@ namespace RaccoonEcs
 		 */
 		Entity addEntity()
 		{
-			Entity::RawId rawEntityId = 0;
+			Entity::RawId rawEntityId;
 			if (mFreeEntityIds.empty())
 			{
 				RACCOON_ECS_ASSERT(mEntityVersions.size() == mEntityExistanceFlags.size(), "Inconsistent entity vectors");
@@ -68,7 +66,7 @@ namespace RaccoonEcs
 			}
 			else
 			{
-				size_t freeEntityId = mFreeEntityIds.back();
+				const size_t freeEntityId = mFreeEntityIds.back();
 				mFreeEntityIds.pop_back();
 				mEntityExistanceFlags[freeEntityId] = true;
 				rawEntityId = static_cast<Entity::RawId>(freeEntityId);
@@ -83,7 +81,7 @@ namespace RaccoonEcs
 		 * again in any manager in future
 		 * @param entityToRemove  The entity that should be removed, should be bound to this manager
 		 */
-		void removeEntity(Entity entityToRemove)
+		void removeEntity(const Entity entityToRemove)
 		{
 			const size_t entityToRemoveIdx = static_cast<size_t>(entityToRemove.getRawId());
 			if (entityToRemoveIdx >= mEntityExistanceFlags.size() || !mEntityExistanceFlags[entityToRemoveIdx])
@@ -132,7 +130,7 @@ namespace RaccoonEcs
 		/**
 		 * @brief Checks if the entity is exists in this manager
 		 */
-		bool hasEntity(Entity entity)
+		bool hasEntity(const Entity entity)
 		{
 			const size_t rawEntityId = static_cast<size_t>(entity.getRawId());
 			return rawEntityId < mEntityVersions.size()
@@ -174,7 +172,7 @@ namespace RaccoonEcs
 		 * @param entity  The entity whose components are collected
 		 * @param outComponents  The list of components belonging to the entity with their types
 		 */
-		void getAllEntityComponents(Entity entity, std::vector<TypedComponent>& outComponents)
+		void getAllEntityComponents(const Entity entity, std::vector<TypedComponent>& outComponents)
 		{
 			const Entity::RawId entityIdx = entity.getRawId();
 			if (entityIdx < mEntityExistanceFlags.size() && mEntityExistanceFlags[entityIdx])
@@ -194,7 +192,7 @@ namespace RaccoonEcs
 		 * @param entity  The entity whose components are collected
 		 * @param outComponents  The list of constant components belonging to the entity with their types
 		 */
-		void getAllEntityComponents(Entity entity, std::vector<ConstTypedComponent>& outComponents) const
+		void getAllEntityComponents(const Entity entity, std::vector<ConstTypedComponent>& outComponents) const
 		{
 			const Entity::RawId entityIdx = entity.getRawId();
 			if (entityIdx < mEntityExistanceFlags.size() && mEntityExistanceFlags[entityIdx])
@@ -212,7 +210,7 @@ namespace RaccoonEcs
 		/**
 		 * @brief Checks if the given entity has the given component
 		 */
-		[[nodiscard]] bool doesEntityHaveComponent(Entity entity, ComponentTypeId typeId) const
+		[[nodiscard]] bool doesEntityHaveComponent(const Entity entity, ComponentTypeId typeId) const
 		{
 			const Entity::RawId entityIdx = entity.getRawId();
 			if (entityIdx < mEntityExistanceFlags.size() && mEntityExistanceFlags[entityIdx])
@@ -252,12 +250,13 @@ namespace RaccoonEcs
 		/**
 		 * @brief Adds a new default-initialized component to the given entity and returns pointer to it
 		 * @param entity  The entity that will own the component
+		 * @param typeId  The type of the component
 		 * @return A pointer to the newly created default-initialized component
 		 *
 		 * Beware that the entity should not have the component of the given type prior calling the function
 		 * otherwise the call can result with memory leak or UB
 		 */
-		void* addComponentByType(Entity entity, ComponentTypeId typeId)
+		void* addComponentByType(const Entity entity, ComponentTypeId typeId)
 		{
 			const auto createFn = mComponentFactory.get().getCreationFn(typeId);
 			void* component = createFn();
@@ -275,7 +274,7 @@ namespace RaccoonEcs
 		 * otherwise the entity won't be added and no indication of it will be provided, effectively producing
 		 * a memory leak or UB
 		 */
-		void addComponent(Entity entity, void* component, ComponentTypeId typeId)
+		void addComponent(const Entity entity, void* component, ComponentTypeId typeId)
 		{
 			const Entity::RawId entityIdx = entity.getRawId();
 			if (entityIdx >= mEntityExistanceFlags.size() || !mEntityExistanceFlags[entityIdx])
@@ -299,7 +298,7 @@ namespace RaccoonEcs
 			removeComponent(entity, ComponentType::GetTypeId());
 		}
 
-		void removeComponent(Entity entity, ComponentTypeId typeId)
+		void removeComponent(const Entity entity, ComponentTypeId typeId)
 		{
 			const Entity::RawId entityIdx = entity.getRawId();
 			if (entityIdx >= mEntityExistanceFlags.size() || !mEntityExistanceFlags[entityIdx])
@@ -344,6 +343,8 @@ namespace RaccoonEcs
 		/**
 		 * @brief Creates a component of the given type and schedules its addition to the given entity
 		 * @param entity  The entity that will own the component
+		 * @param component  The pointer to the existent component (can't be nullptr or be owned by another entity)
+		 * @param typeId  The type of the given component
 		 * @return  A pointer to the newly created default-initialized component
 		 *
 		 * You can use the component right away, but it won't be queried before `executeScheduledActions` called.
@@ -397,7 +398,7 @@ namespace RaccoonEcs
 		 * otherwise can return components partially (part of them can be nullptr)
 		 */
 		template<typename... Components>
-		std::tuple<Components*...> getEntityComponents(Entity entity)
+		std::tuple<Components*...> getEntityComponents(const Entity entity)
 		{
 			const Entity::RawId entityIdx = entity.getRawId();
 			if (entityIdx >= mEntityExistanceFlags.size() || !mEntityExistanceFlags[entityIdx])
@@ -578,7 +579,7 @@ namespace RaccoonEcs
 		 *
 		 * The components are guaranteed not to be moved in the memory.
 		 */
-		Entity transferEntityTo(EntityManager& newManager, Entity entity)
+		Entity transferEntityTo(EntityManager& newManager, const Entity entity)
 		{
 			if (this == &newManager)
 			{
@@ -669,7 +670,7 @@ namespace RaccoonEcs
 
 				if (lastFilledRIt != componentVector.rend())
 				{
-					size_t lastFilledIdx = std::distance(lastFilledRIt, componentVector.rend());
+					const size_t lastFilledIdx = std::distance(lastFilledRIt, componentVector.rend());
 					componentVector.erase(componentVector.begin() + static_cast<ptrdiff_t>(lastFilledIdx), componentVector.end());
 				}
 				else
@@ -726,7 +727,7 @@ namespace RaccoonEcs
 			void* component;
 			ComponentTypeId typeId;
 
-			ComponentToAdd(Entity entity, void* component, ComponentTypeId typeId)
+			ComponentToAdd(const Entity entity, void* component, ComponentTypeId typeId)
 				: entity(entity)
 				, component(component)
 				, typeId(typeId)
@@ -738,7 +739,7 @@ namespace RaccoonEcs
 			Entity entity;
 			ComponentTypeId typeId;
 
-			ComponentToRemove(Entity entity, ComponentTypeId typeId)
+			ComponentToRemove(const Entity entity, ComponentTypeId typeId)
 				: entity(entity)
 				, typeId(typeId)
 			{}
@@ -746,7 +747,7 @@ namespace RaccoonEcs
 
 	private:
 		template<int I = 0>
-		std::tuple<> getEmptyComponents()
+		static std::tuple<> getEmptyComponents()
 		{
 			return {};
 		}
@@ -758,7 +759,7 @@ namespace RaccoonEcs
 		}
 
 		template<unsigned Index, typename Datas>
-		std::tuple<> getEntityComponentSetInner(size_t /*entityIdx*/, Datas& /*componentVectors*/)
+		static std::tuple<> getEntityComponentSetInner(size_t /*entityIdx*/, Datas& /*componentVectors*/)
 		{
 			return {};
 		}
@@ -781,7 +782,7 @@ namespace RaccoonEcs
 		}
 
 		template<typename FirstComponent, typename... Components, typename... Data>
-		std::tuple<FirstComponent*, Components*...> getEntityComponentSet(size_t entityIdx, std::tuple<std::vector<Data*>&...>& componentVectors)
+		std::tuple<FirstComponent*, Components*...> getEntityComponentSet(const size_t entityIdx, std::tuple<std::vector<Data*>&...>& componentVectors)
 		{
 			using Datas = std::tuple<std::vector<Data*>&...>;
 			return getEntityComponentSetInner<0, Datas, FirstComponent, Components...>(entityIdx, componentVectors);

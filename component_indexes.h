@@ -160,7 +160,7 @@ namespace RaccoonEcs
 			[[nodiscard]] bool isPopulated() const { return mIsPopulated; }
 
 		protected:
-			void setPopulated(bool isPopulated) { mIsPopulated = isPopulated; }
+			void setPopulated(const bool isPopulated) { mIsPopulated = isPopulated; }
 
 		protected:
 			constexpr static size_t InvalidIndex = std::numeric_limits<size_t>::max();
@@ -177,7 +177,7 @@ namespace RaccoonEcs
 				: mComponentTypes({Components::GetTypeId()...})
 			{}
 
-			void tryAddEntity(size_t entityIndex, const ComponentMap& componentMap) final
+			void tryAddEntity(size_t entityIndex, const ComponentMap& componentMap) override
 			{
 				using namespace TemplateTrick;
 				std::array<const std::vector<void*>*, sizeof...(Components)> componentVectors;
@@ -205,7 +205,7 @@ namespace RaccoonEcs
 				mDenseArray.matchingEntityIndexes.push_back(entityIndex);
 			}
 
-			void tryRemoveEntity(size_t entityIndex) final
+			void tryRemoveEntity(const size_t entityIndex) override
 			{
 				if (entityIndex < mSparseArray.size())
 				{
@@ -245,7 +245,7 @@ namespace RaccoonEcs
 				return mComponentTypes;
 			}
 
-			void populate(const ComponentMap& componentMap) final
+			void populate(const ComponentMap& componentMap) override
 			{
 				BaseIndex::setPopulated(true);
 				size_t shortestVectorSize = std::numeric_limits<size_t>::max();
@@ -275,13 +275,13 @@ namespace RaccoonEcs
 				}
 			}
 
-			void repopulate(const ComponentMap& componentMap) final
+			void repopulate(const ComponentMap& componentMap) override
 			{
 				clear();
 				populate(componentMap);
 			}
 
-			void clear() final
+			void clear() override
 			{
 				BaseIndex::setPopulated(false);
 				mDenseArray.matchingEntityIndexes.clear();
@@ -332,7 +332,7 @@ namespace RaccoonEcs
 			const std::vector<ComponentTypeId>& componentTypes;
 
 			template<typename... Components>
-			IndexKey(const std::vector<ComponentTypeId>& componentTypes)
+			explicit IndexKey(const std::vector<ComponentTypeId>& componentTypes)
 				: hash(calculateHash(componentTypes))
 				, componentTypes(componentTypes)
 			{}
