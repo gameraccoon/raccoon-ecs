@@ -1,8 +1,8 @@
 #pragma once
 
+#include <string>
 #include <tuple>
 #include <vector>
-#include <string>
 
 #include "component_factory.h"
 #include "error_handling.h"
@@ -13,7 +13,7 @@ namespace RaccoonEcs
 	/**
 	 * @brief This class can be used to store components specific for some non-entity object (e.g. for a World)
 	 */
-	template <typename ComponentTypeId, typename ComponentFactory = ComponentFactoryImpl<ComponentTypeId>>
+	template<typename ComponentTypeId, typename ComponentFactory = ComponentFactoryImpl<ComponentTypeId>>
 	class ComponentSetHolderImpl
 	{
 	public:

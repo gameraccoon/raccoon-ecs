@@ -1,10 +1,9 @@
 #pragma once
 
-#include <vector>
 #include <span>
+#include <vector>
 
 #include "../msvc_fix.h"
-
 #include "entity_view.h"
 
 namespace RaccoonEcs
@@ -46,7 +45,7 @@ namespace RaccoonEcs
 			mRecords.reserve(entityManagers.size());
 			for (auto& entityManager : entityManagers)
 			{
-				mRecords.push_back({entityManager, nullptr});
+				mRecords.push_back({ entityManager, nullptr });
 			}
 		}
 
@@ -107,8 +106,8 @@ namespace RaccoonEcs
 			for (Record& record : mRecords)
 			{
 				record.entityManager.get().TEMPLATE_MSVC_FIX forEachComponentSetWithEntity<Components...>(
-					[&processor, &entityManager = record.entityManager.get()](Entity entity, Components*... components) mutable -> void{
-						processor(EntityView{entity, entityManager}, components...);
+					[&processor, &entityManager = record.entityManager.get()](Entity entity, Components*... components) mutable -> void {
+						processor(EntityView{ entity, entityManager }, components...);
 					}
 				);
 			}
@@ -129,8 +128,8 @@ namespace RaccoonEcs
 			for (Record& record : mRecords)
 			{
 				record.entityManager.get().TEMPLATE_MSVC_FIX forEachComponentSetWithEntity<Components...>(
-					[&processor, &entityManager = record.entityManager.get()](ExtraData data, Entity entity, Components*... components) mutable -> void{
-						processor(data, EntityView{entity, entityManager}, components...);
+					[&processor, &entityManager = record.entityManager.get()](ExtraData data, Entity entity, Components*... components) mutable -> void {
+						processor(data, EntityView{ entity, entityManager }, components...);
 					},
 					record.extraData
 				);
@@ -163,4 +162,4 @@ namespace RaccoonEcs
 	private:
 		std::vector<Record> mRecords;
 	};
-}
+} // namespace RaccoonEcs

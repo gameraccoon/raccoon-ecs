@@ -178,7 +178,7 @@ namespace RaccoonEcs
 		{
 		public:
 			explicit Index()
-				: mComponentTypes({Components::GetTypeId()...})
+				: mComponentTypes({ Components::GetTypeId()... })
 			{}
 
 			void tryAddEntity(size_t entityIndex, const ComponentMap& componentMap) override
@@ -316,8 +316,8 @@ namespace RaccoonEcs
 		template<typename... Components>
 		static const std::vector<ComponentTypeId>& getComponentTypes()
 		{
-			static const std::vector<ComponentTypeId> componentTypes = []{
-				std::vector<ComponentTypeId> types{Components::GetTypeId()...};
+			static const std::vector<ComponentTypeId> componentTypes = [] {
+				std::vector<ComponentTypeId> types{ Components::GetTypeId()... };
 				std::sort(types.begin(), types.end());
 				return types;
 			}();

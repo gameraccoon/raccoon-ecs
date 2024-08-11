@@ -8,7 +8,7 @@ namespace RaccoonEcs
 	/**
 	 * @brief Non-owning wrapper around entity and its current entity manager
 	 */
-	template <typename EntityManager>
+	template<typename EntityManager>
 	class EntityViewImpl
 	{
 	public:

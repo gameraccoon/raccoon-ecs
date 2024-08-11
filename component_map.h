@@ -8,7 +8,7 @@
 
 namespace RaccoonEcs
 {
-	template <typename ComponentTypeId>
+	template<typename ComponentTypeId>
 	class ComponentMapImpl
 	{
 	public:

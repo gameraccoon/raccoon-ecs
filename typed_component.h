@@ -2,8 +2,9 @@
 
 namespace RaccoonEcs
 {
-	template <typename ComponentTypeId>
-	struct TypedComponentImpl {
+	template<typename ComponentTypeId>
+	struct TypedComponentImpl
+	{
 		TypedComponentImpl(ComponentTypeId typeId, void* component)
 			: typeId(typeId)
 			, component(component)
@@ -13,8 +14,9 @@ namespace RaccoonEcs
 		void* component;
 	};
 
-	template <typename ComponentTypeId>
-	struct ConstTypedComponentImpl {
+	template<typename ComponentTypeId>
+	struct ConstTypedComponentImpl
+	{
 		ConstTypedComponentImpl(ComponentTypeId typeId, const void* component)
 			: typeId(typeId)
 			, component(component)

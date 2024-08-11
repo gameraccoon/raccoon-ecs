@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vector>
 #include <functional>
+#include <vector>
 
 namespace RaccoonEcs
 {
@@ -11,11 +11,12 @@ namespace RaccoonEcs
 		virtual ~ComponentPoolBase() = default;
 	};
 
-	template <typename ComponentType>
+	template<typename ComponentType>
 	class ComponentPool final : public ComponentPoolBase
 	{
 	public:
 		using PoolGrowStrategyFn = std::function<size_t(size_t)>;
+
 	public:
 		explicit ComponentPool(const size_t defaultChunkSize, const bool needPreallocate = false, PoolGrowStrategyFn&& growStrategyFn = nullptr) noexcept
 			: mDefaultChunkSize(defaultChunkSize)
@@ -65,8 +66,10 @@ namespace RaccoonEcs
 		}
 
 	private:
-		struct ComponentSlot {
-			union {
+		struct ComponentSlot
+		{
+			union
+			{
 				// free list implementation
 				ComponentType component;
 				ComponentSlot* nextFreeSlot;

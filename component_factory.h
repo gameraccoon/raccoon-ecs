@@ -3,11 +3,11 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
-#include <unordered_map>
 #include <string>
+#include <unordered_map>
 
-#include "error_handling.h"
 #include "component_pool.h"
+#include "error_handling.h"
 
 namespace RaccoonEcs
 {
@@ -19,7 +19,7 @@ namespace RaccoonEcs
 		constexpr static size_t value = (std::max)(static_cast<size_t>(1u), static_cast<size_t>(4096u / sizeof(ComponentType)));
 	};
 
-	template <typename ComponentTypeId>
+	template<typename ComponentTypeId>
 	class ComponentFactoryImpl
 	{
 	public:
@@ -38,16 +38,17 @@ namespace RaccoonEcs
 		void registerComponent(
 			const size_t = 0,
 			const bool = false,
-			std::function<size_t(size_t)>&& = nullptr)
+			std::function<size_t(size_t)>&& = nullptr
+		)
 		{
 			const ComponentTypeId componentTypeId = ComponentType::GetTypeId();
 
-			mComponentCreators[componentTypeId] = []{
+			mComponentCreators[componentTypeId] = [] {
 				// the component has no data, so we don't need to allocate it
 				static ComponentType component;
 				return &component;
 			};
-			mComponentDeleters[componentTypeId] = [](void*){};
+			mComponentDeleters[componentTypeId] = [](void*) {};
 #ifdef RACCOON_ECS_COPYABLE_COMPONENTS
 			mComponentCloners[componentTypeId] = [](void* component) -> void* {
 				// all instances are mapping to the same memory, so we can just return the pointer
@@ -61,17 +62,18 @@ namespace RaccoonEcs
 		void registerComponent(
 			const size_t defaultChunkSize = DefaultComponentChunkSize<ComponentType>::value,
 			const bool needPreallocate = false,
-			std::function<size_t(size_t)>&& poolGrowStrategyFn = nullptr)
+			std::function<size_t(size_t)>&& poolGrowStrategyFn = nullptr
+		)
 		{
 			const ComponentTypeId componentTypeId = ComponentType::GetTypeId();
 
 			auto componentPoolRawPtr = new (std::nothrow) ComponentPool<ComponentType>(defaultChunkSize, needPreallocate, std::move(poolGrowStrategyFn));
 			mComponentPools.emplace_back(componentPoolRawPtr);
 
-			mComponentCreators[componentTypeId] = [componentPoolRawPtr]{
+			mComponentCreators[componentTypeId] = [componentPoolRawPtr] {
 				return componentPoolRawPtr->acquireComponent();
 			};
-			mComponentDeleters[componentTypeId] = [componentPoolRawPtr](void* component){
+			mComponentDeleters[componentTypeId] = [componentPoolRawPtr](void* component) {
 				if (component)
 				{
 					componentPoolRawPtr->releaseComponent(component);

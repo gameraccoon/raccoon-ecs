@@ -1,13 +1,13 @@
 #pragma once
 
-#include <vector>
 #include <functional>
+#include <vector>
 
 #include "error_handling.h"
 
 namespace RaccoonEcs
 {
-	template <typename... Args>
+	template<typename... Args>
 	class SinglecastDelegate
 	{
 	public:
@@ -17,7 +17,8 @@ namespace RaccoonEcs
 		SinglecastDelegate() = default;
 		~SinglecastDelegate() = default;
 
-		SinglecastDelegate(const SinglecastDelegate&) : SinglecastDelegate() {}
+		SinglecastDelegate(const SinglecastDelegate&)
+			: SinglecastDelegate() {}
 
 		SinglecastDelegate& operator=(const SinglecastDelegate&)
 		{
@@ -77,19 +78,19 @@ namespace RaccoonEcs
 			{
 			}
 
-			bool operator ==(const Handle& b) const
+			bool operator==(const Handle& b) const
 			{
 				return mIndex == b.mIndex;
 			}
 
-			bool operator !=(const Handle& b) const { return !(*this == b); }
+			bool operator!=(const Handle& b) const { return !(*this == b); }
 
 		private:
 			int mIndex = -1;
 		};
-	}
+	} // namespace Delegates
 
-	template <typename... Args>
+	template<typename... Args>
 	class MulticastDelegate
 	{
 	public:
@@ -99,7 +100,8 @@ namespace RaccoonEcs
 		MulticastDelegate() = default;
 		~MulticastDelegate() = default;
 
-		MulticastDelegate(const MulticastDelegate&) : MulticastDelegate() {}
+		MulticastDelegate(const MulticastDelegate&)
+			: MulticastDelegate() {}
 
 		MulticastDelegate& operator=(const MulticastDelegate&)
 		{
@@ -139,8 +141,7 @@ namespace RaccoonEcs
 				std::remove_if(
 					mFunctions.begin(),
 					mFunctions.end(),
-					[handle](FunctionData& val)
-					{
+					[handle](FunctionData& val) {
 						return val.handle == handle;
 					}
 				),

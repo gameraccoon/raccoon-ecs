@@ -15,7 +15,7 @@ namespace RaccoonEcs
 	class SystemsManager
 	{
 	public:
-		template <typename T, typename... Args>
+		template<typename T, typename... Args>
 		void registerSystem(Args&&... args)
 		{
 			mSystems.emplace_back(new T(std::forward<Args>(args)...));
