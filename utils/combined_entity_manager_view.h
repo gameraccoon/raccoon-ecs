@@ -149,7 +149,7 @@ namespace RaccoonEcs
 		{
 			for (Record& record : mRecords)
 			{
-				record.entityManager.get().TEMPLATE_MSVC_FIX getAllEntityComponents(entity, outComponents);
+				record.entityManager.get().TEMPLATE_MSVC_EMSCRIPTEN_FIX getAllEntityComponents(entity, outComponents);
 
 				// if components are not empty, then we have found the entity
 				if (!outComponents.empty())
