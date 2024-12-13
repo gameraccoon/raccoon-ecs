@@ -126,7 +126,7 @@ namespace RaccoonEcs
 		}
 
 		/**
-		 * @brief Checks if the entity is exists in this manager
+		 * @brief Checks if the entity exists in this manager
 		 */
 		bool hasEntity(const Entity entity)
 		{
