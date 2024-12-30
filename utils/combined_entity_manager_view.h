@@ -73,6 +73,15 @@ namespace RaccoonEcs
 			}
 		}
 
+		template<typename... Components, typename DataVector>
+		void getComponentsWithEntitiesAndExtraData(DataVector& inOutComponents)
+		{
+			for (Record& record : mRecords)
+			{
+				record.entityManager.get().TEMPLATE_MSVC_FIX getComponentsWithEntities<Components...>(inOutComponents, record.extraData);
+			}
+		}
+
 		template<typename... Components, typename FunctionType>
 		void forEachComponentSet(FunctionType processor)
 		{
