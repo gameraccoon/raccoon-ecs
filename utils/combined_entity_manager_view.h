@@ -136,6 +136,17 @@ namespace RaccoonEcs
 			}
 		}
 
+		template<typename... Components>
+		size_t getMatchingEntitiesCount()
+		{
+			size_t totalEntities = 0;
+			for (Record& record : mRecords)
+			{
+				totalEntities += record.entityManager.get().TEMPLATE_MSVC_FIX getMatchingEntitiesCount<Components...>();
+			}
+			return totalEntities;
+		}
+
 		void executeScheduledActions()
 		{
 			for (Record& record : mRecords)
