@@ -12,7 +12,7 @@ namespace RaccoonEcs
 	class EntityViewImpl
 	{
 	public:
-		EntityViewImpl(Entity entity, EntityManager& manager)
+		EntityViewImpl(const Entity entity, EntityManager& manager)
 			: mEntity(entity)
 			, mManager(manager)
 		{
