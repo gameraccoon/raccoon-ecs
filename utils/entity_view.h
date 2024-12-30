@@ -54,6 +54,11 @@ namespace RaccoonEcs
 			mManager.template scheduleRemoveComponent<ComponentType>(mEntity);
 		}
 
+		void scheduleRemoveEntity()
+		{
+			mManager.scheduleRemoveEntity(mEntity);
+		}
+
 		[[nodiscard]] Entity getEntity() const
 		{
 			return mEntity;

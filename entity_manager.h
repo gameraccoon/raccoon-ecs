@@ -366,11 +366,19 @@ namespace RaccoonEcs
 		 */
 		void scheduleRemoveComponent(Entity entity, ComponentTypeId typeId)
 		{
-			mScheduledComponentRemovements.emplace_back(entity, typeId);
+			mScheduledComponentRemovals.emplace_back(entity, typeId);
 		}
 
 		/**
-		 * @brief Executes scheduled action, such as component additions and removements
+		 * @brief Schedules removing the component of the given type from the given entity
+		 */
+		void scheduleRemoveEntity(Entity entity)
+		{
+			mScheduledEntityRemovals.emplace_back(entity);
+		}
+
+		/**
+		 * @brief Executes scheduled action, such as component additions and removals
 		 */
 		void executeScheduledActions()
 		{
@@ -380,11 +388,17 @@ namespace RaccoonEcs
 			}
 			mScheduledComponentAdditions.clear();
 
-			for (const auto& removement : mScheduledComponentRemovements)
+			for (const auto& removal : mScheduledComponentRemovals)
 			{
-				removeComponent(removement.entity, removement.typeId);
+				removeComponent(removal.entity, removal.typeId);
 			}
-			mScheduledComponentRemovements.clear();
+			mScheduledComponentRemovals.clear();
+
+			for (const Entity entity : mScheduledEntityRemovals)
+			{
+				removeEntity(entity);
+			}
+			mScheduledEntityRemovals.clear();
 		}
 
 		/**
@@ -523,7 +537,7 @@ namespace RaccoonEcs
 				return;
 			}
 
-			// have to use this weird syntax because it otherwise can break on MSVC is someone
+			// have to use this weird syntax because it otherwise can break on MSVC if someone
 			// inludes <windows.h> before this file without NOMINMAX defined
 			size_t endIdx = (std::numeric_limits<Entity::RawId>::max)();
 			std::vector<const std::vector<void*>*> componentVectors;
@@ -532,7 +546,7 @@ namespace RaccoonEcs
 			{
 				auto& componentVector = mComponents.getComponentVectorById(typeId);
 
-				// have to use this weird syntax because it otherwise can break on MSVC is someone
+				// have to use this weird syntax because it otherwise can break on MSVC if someone
 				// inludes <windows.h> before this file without NOMINMAX defined
 				endIdx = (std::min)(endIdx, componentVector.size());
 
@@ -696,7 +710,7 @@ namespace RaccoonEcs
 			mFreeEntityIds.clear();
 
 			mScheduledComponentAdditions.clear();
-			mScheduledComponentRemovements.clear();
+			mScheduledComponentRemovals.clear();
 
 			mIndexes.clear();
 		}
@@ -852,7 +866,8 @@ namespace RaccoonEcs
 		std::vector<size_t> mFreeEntityIds;
 
 		std::vector<ComponentToAdd> mScheduledComponentAdditions;
-		std::vector<ComponentToRemove> mScheduledComponentRemovements;
+		std::vector<ComponentToRemove> mScheduledComponentRemovals;
+		std::vector<Entity> mScheduledEntityRemovals;
 
 		std::reference_wrapper<const ComponentFactory> mComponentFactory;
 	};
